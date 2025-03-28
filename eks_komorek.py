@@ -29,12 +29,34 @@ class ClickableLine(QGraphicsLineItem):
         # Oblicz odległość od początku linii do punktu kliknięcia
         clicked_pos = event.scenePos()
         start_pos = self.line().p1()
-        distance = QLineF(start_pos, clicked_pos).length()
-        value_to_add = int(distance // 50)  # Zaokrąglij w dół do części całkowitych
+        end_pos = self.line().p2()
+        distance_to_start = QLineF(start_pos, clicked_pos).length()
+        distance_to_end = QLineF(end_pos, clicked_pos).length()
+        value_to_add = int(distance_to_start // 50)  # Zaokrąglij w dół do części całkowitych
+        value_to_subtract = int(distance_to_end // 50)  # Zaokrąglij w dół do części całkowitych
 
         # Dodaj obliczoną wartość do komórki początkowej
         if self.start_cell:
             self.start_cell.update_value(value_to_add)
+
+        # Zwiększ obliczoną wartość w komórce końcowej
+        if self.end_cell:
+            if self.start_cell.base_color == self.end_cell.base_color:
+                self.end_cell.update_value(value_to_subtract)  # Zwiększ wartość w końcowej komórce
+            else:
+                self.end_cell.update_value(-value_to_subtract)  # Zmniejsz wartość w końcowej komórce
+            if self.end_cell.base_color == Qt.gray and hasattr(self.end_cell, 'top_text'):
+                self.end_cell.update_top_text(value_to_subtract)  # Zwiększ wartość górnej liczby
+
+                # Sprawdź, czy górna liczba osiągnęła wartość dolnej liczby
+                if hasattr(self.end_cell, 'bottom_text'):
+                    top_value = int(self.end_cell.top_text.toPlainText())
+                    bottom_value = int(self.end_cell.bottom_text.toPlainText())
+                    if top_value >= bottom_value:
+                        if self.start_cell.base_color == QColor("#66C676"):
+                            self.end_cell.convert_to_green()  # Zamień na zieloną komórkę
+                        elif self.start_cell.base_color == QColor("#D8177E"):
+                            self.end_cell.convert_to_pink()  # Zamień na różową komórkę
 
         # Zmiana jednego z wewnętrznych kółek z powrotem na białe
         for circle in self.start_cell.inner_circles:
@@ -400,7 +422,9 @@ class GameScene(QGraphicsScene):
         self.cells = []
         cell_positions = [
             (150, 650, "#66C676", 20),  # Zielona komórka
+            (350, 650, "#66C676", 20),  # Zielona komórka
             (650, 150, "#D8177E", 20),  # Różowa komórka
+            (450, 150, "#D8177E", 20),  # Różowa komórka
             (250, 250, QColor(Qt.gray), 0),  # Szara komórka (wartość 0, ale nie używana)
             (550, 550, QColor(Qt.gray), 0),  # Szara komórka (wartość 0, ale nie używana)
         ]
@@ -561,15 +585,15 @@ class GameScene(QGraphicsScene):
                                         cell.convert_to_green()  # Zamień szarą komórkę na zieloną
                                     elif hasattr(cell, 'top_text') and int(cell.top_text.toPlainText()) == 8 and fill_color == QColor("#D8177E"):
                                         cell.convert_to_pink()  # Zamień szarą komórkę na różową
-                                elif cell.base_color == QColor("#D8177E"):
-                                    # Zmniejsz wartość na różowej komórce
-                                    cell.update_value(-1)
+                                elif cell.base_color == QColor("#D8177E") and cell != item.start_cell:
+                                    # Zwiększ wartość na różowej komórce
+                                    cell.update_value(1)
                                 elif cell.base_color == QColor("#66C676") and cell != item.start_cell:
-                                    # Decrease value on the green cell
-                                    cell.update_value(-1)
+                                    # Zwiększ wartość na zielonej komórce
+                                    cell.update_value(1)
                                 break
 
-                        # Decrease value on the starting green cell
+                        # Decrease value on the starting cell
                         item.start_cell.update_value(-1)
 
     def increase_cell_values(self):
