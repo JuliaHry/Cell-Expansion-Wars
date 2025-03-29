@@ -84,6 +84,7 @@ class ClickableCell(QGraphicsEllipseItem):
         self.is_selected = False
         self.inner_circles = []  # Przechowuje referencje do wewnętrznych kółek
         self.value_text = None  # Referencja do tekstu wyświetlającego wartość
+        self.level = 1  # Poziom komórki (domyślnie 1)
     
     def set_gradient(self):
         if self.base_color == Qt.gray:
@@ -127,6 +128,26 @@ class ClickableCell(QGraphicsEllipseItem):
     
     def set_value_text(self, text_item):
         self.value_text = text_item
+
+    def set_level_text(self, text_item):
+        self.level_text = text_item
+
+    def get_attack_power_per_mini_cell(self):
+        return self.level  # albo: return max(1, round(self.level * 1.5))
+
+
+    def increase_level(self):
+        if self.level < 3:
+            self.level += 1
+            self.update_level_display()
+
+    def update_level_display(self):
+        if hasattr(self, 'level_text'):
+            self.level_text.setPlainText(f"LVL {self.level}")
+
+    def get_attack_power(self):
+        return self.level * self.value
+
     
     def update_value(self, delta, fill_color=None):
         self.value += delta
@@ -136,6 +157,8 @@ class ClickableCell(QGraphicsEllipseItem):
             self.value_text.setPlainText(str(self.value))
         if self.base_color == QColor("#D8177E") and self.value <= 0:
             self.convert_to_green()
+        elif self.base_color == QColor("#66C676") and self.value <= 0:
+            self.convert_to_pink()  # Convert green cell to pink when value reaches 0
         if self.base_color == Qt.gray:
             if fill_color:
                 self.fill_color = fill_color
@@ -150,6 +173,12 @@ class ClickableCell(QGraphicsEllipseItem):
         self._actual_top_value += delta  # Update the actual value
         self.top_text.setPlainText(str(abs(self._actual_top_value)))  # Display absolute value
         print(f"Updated top value on gray cell: {self._actual_top_value}")  # Debugging
+
+        if self._actual_top_value >= 8:
+            self.convert_to_green(attacker=self.scene().get_attacker(self))
+        elif self._actual_top_value <= -8:
+            self.convert_to_pink(attacker=self.scene().get_attacker(self))
+
 
         # Check for conversion conditions
         if self._actual_top_value >= 8:
@@ -181,11 +210,14 @@ class ClickableCell(QGraphicsEllipseItem):
             gradient.setColorAt(1, self.base_color)  # Gray edge
             self.setBrush(QBrush(gradient))
     
-    def convert_to_green(self):
+    def convert_to_green(self, attacker=None):
         # Zmień kolor na zielony
         self.base_color = QColor("#66C676")
         self.set_gradient()
         
+        if attacker:
+            attacker.increase_level()
+
         # Ustaw wartość na 20
         self.value = 20
         if self.value_text:
@@ -202,6 +234,24 @@ class ClickableCell(QGraphicsEllipseItem):
             )
             self.scene().addItem(text_item)
             self.set_value_text(text_item)
+        
+        # Resetuj poziom do 1, jeśli był wyższy
+        if self.level > 1:
+            self.level = 1
+        self.update_level_display()
+
+        # Dodaj tekst poziomu, jeśli go nie ma
+        if not hasattr(self, 'level_text'):
+            level_text = QGraphicsTextItem("LVL 1")
+            level_text.setFont(QFont("Arial", 10))
+            level_text.setDefaultTextColor(Qt.white)
+            level_text_rect = level_text.boundingRect()
+            level_text.setPos(
+                self.rect().x() + 50 - level_text_rect.width() / 2,
+                self.rect().y() + 75  # poniżej komórki
+            )
+            self.scene().addItem(level_text)
+            self.set_level_text(level_text)
         
         # Usuń liczby z szarej komórki
         if hasattr(self, 'top_text'):
@@ -222,10 +272,13 @@ class ClickableCell(QGraphicsEllipseItem):
                 self.scene().addItem(inner_circle)
                 self.inner_circles.append(inner_circle)
     
-    def convert_to_pink(self):
+    def convert_to_pink(self, attacker=None):
         # Zmień kolor na różowy
         self.base_color = QColor("#D8177E")
         self.set_gradient()
+
+        if attacker:
+            attacker.increase_level()
         
         # Ustaw wartość na 20
         self.value = 20
@@ -243,6 +296,24 @@ class ClickableCell(QGraphicsEllipseItem):
             )
             self.scene().addItem(text_item)
             self.set_value_text(text_item)
+        
+        # Resetuj poziom do 1, jeśli był wyższy
+        if self.level > 1:
+            self.level = 1
+        self.update_level_display()
+
+        # Dodaj tekst poziomu, jeśli go nie ma
+        if not hasattr(self, 'level_text'):
+            level_text = QGraphicsTextItem("LVL 1")
+            level_text.setFont(QFont("Arial", 10))
+            level_text.setDefaultTextColor(Qt.white)
+            level_text_rect = level_text.boundingRect()
+            level_text.setPos(
+                self.rect().x() + 50 - level_text_rect.width() / 2,
+                self.rect().y() + 75  # poniżej komórki
+            )
+            self.scene().addItem(level_text)
+            self.set_level_text(level_text)
         
         # Usuń liczby z szarej komórki
         if hasattr(self, 'top_text'):
@@ -446,6 +517,11 @@ class GameScene(QGraphicsScene):
                     print(f"Znaleziono linię: {item}")  # Debugowanie
                     item.update_position()  # Wywołaj update_position dla każdej linii
 
+    def get_attacker(self, target_cell):
+        for item in self.items():
+            if isinstance(item, ClickableLine) and item.end_cell == target_cell:
+                return item.start_cell
+        return None
 
     def create_cells(self):
         self.cells = []
@@ -490,6 +566,18 @@ class GameScene(QGraphicsScene):
                     inner_circle.setZValue(1)  # Kółka są na wierzchu komórek
                     self.addItem(inner_circle)
                     cell.inner_circles.append(inner_circle)
+
+            if color != QColor(Qt.gray):
+                level_text = QGraphicsTextItem("LVL 1")
+                level_text.setFont(QFont("Arial", 10))
+                level_text.setDefaultTextColor(Qt.white)
+                level_text_rect = level_text.boundingRect()
+                level_text.setPos(
+                    x + 50 - level_text_rect.width() / 2,
+                    y + 75  # poniżej komórki
+                )
+                self.addItem(level_text)
+                cell.set_level_text(level_text)  # Set reference to level text  
             
             # Dodanie dwóch liczb na szarej komórce (0 u góry i 8 na dole)
             if color == QColor(Qt.gray):
@@ -573,43 +661,46 @@ class GameScene(QGraphicsScene):
                     # Utwórz nowe mini kółko
                     color = "#7D1B4F" if item.start_cell.base_color == QColor("#D8177E") else "#186527"
                     mini_cell = QGraphicsEllipseItem(-5, -5, 10, 10, item)
-                    mini_cell.setBrush(QBrush(QColor(color)))  # Nowy kolor
-                    mini_cell.setPen(QPen(QColor(color), 1))  # Nowy kolor
+                    mini_cell.setBrush(QBrush(QColor(color)))
+                    mini_cell.setPen(QPen(QColor(color), 1))
                     mini_cell.setPos(item.line().p1())
-                    mini_cell.setZValue(1)  # Ensure the mini cell is above the line
+                    mini_cell.setZValue(1)
                     item.mini_cells.append(mini_cell)
+
                 for mini_cell in item.mini_cells:
-                    # Przesuń mini kółko wzdłuż linii
                     current_pos = mini_cell.pos()
                     end_pos = item.line().p2()
                     direction = end_pos - current_pos
-                    step = direction / 10  # Mały krok
+                    step = direction / 10  # krok ruchu
                     mini_cell.setPos(current_pos + step)
+
                     if (current_pos - end_pos).manhattanLength() < 5:
-                        # Remove the mini cell when it reaches the end
                         self.removeItem(mini_cell)
                         item.mini_cells.remove(mini_cell)
 
-                        # Find the cell the mini cell reached
                         for cell in self.cells:
                             if cell.rect().contains(end_pos):
+                                attacker = item.start_cell
                                 if cell.base_color == Qt.gray:
-                                    if item.start_cell.base_color == QColor("#66C676"):
-                                        # Increase the top value for gray cells when green mini cells enter
+                                    if attacker.base_color == QColor("#66C676"):
                                         cell.update_top_text(1)
-                                    elif item.start_cell.base_color == QColor("#D8177E"):
-                                        # Decrease the top value for gray cells when pink mini cells enter
+                                    elif attacker.base_color == QColor("#D8177E"):
                                         cell.update_top_text(-1)
-                                elif cell.base_color == QColor("#D8177E") and item.start_cell.base_color == QColor("#66C676"):
-                                    # Decrease value on pink cells
-                                    cell.update_value(-1)
-                                elif cell.base_color == QColor("#66C676") and item.start_cell.base_color == QColor("#D8177E"):
-                                    # Decrease value on green cells
-                                    cell.update_value(-1)
-                                break
 
-                        # Decrease value on the starting cell
+                                elif cell.base_color != attacker.base_color:
+    # WROGA KOMÓRKA – zastosuj siłę ataku
+                                    damage = attacker.get_attack_power_per_mini_cell()
+                                    print(f"Mini-komórka z poziomem {attacker.level} atakuje! Obrażenia: {damage}")  # DEBUG
+                                    cell.update_value(-damage)
+                                elif cell.base_color == attacker.base_color:
+                                    # PRZYJACIELSKA KOMÓRKA – dodaj 1 wartość
+                                    cell.update_value(1)
+
+                                break  # znaleziono cel, nie szukamy dalej
+
+                        # Zmniejsz wartość atakującej komórki (zawsze o 1)
                         item.start_cell.update_value(-1)
+
 
     def increase_cell_values(self):
         for cell in self.cells:
