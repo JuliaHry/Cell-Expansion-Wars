@@ -2,6 +2,7 @@ import sys
 from PyQt5.QtWidgets import QApplication, QGraphicsScene, QGraphicsView, QGraphicsEllipseItem, QGraphicsTextItem, QGraphicsLineItem, QMenu, QAction, QPushButton, QGraphicsRectItem, QGraphicsPixmapItem, QLabel
 from PyQt5.QtGui import QBrush, QPen, QLinearGradient, QRadialGradient, QColor, QPainter, QFont, QTransform, QPixmap
 from PyQt5.QtCore import Qt, QRectF, QLineF, QPointF, QTimer
+from random import uniform
 
 # Import zasobów z pliku resources.py
 import resources
@@ -248,7 +249,7 @@ class ClickableCell(QGraphicsEllipseItem):
             level_text_rect = level_text.boundingRect()
             level_text.setPos(
                 self.rect().x() + 50 - level_text_rect.width() / 2,
-                self.rect().y() + 75  # poniżej komórki
+                self.rect().y() + 90  # poniżej komórki
             )
             self.scene().addItem(level_text)
             self.set_level_text(level_text)
@@ -474,6 +475,8 @@ class ClickableCell(QGraphicsEllipseItem):
                     ClickableCell.moving_cell.top_text.moveBy(dx, dy)
                 if hasattr(ClickableCell.moving_cell, 'bottom_text'):
                     ClickableCell.moving_cell.bottom_text.moveBy(dx, dy)
+                if hasattr(ClickableCell.moving_cell, 'level_text'):
+                    ClickableCell.moving_cell.level_text.moveBy(dx, dy)
                 
                 # Wyświetl globalne współrzędne komórki
                 global_pos = ClickableCell.moving_cell.scenePos() + ClickableCell.moving_cell.rect().center()
@@ -487,7 +490,48 @@ class ClickableCell(QGraphicsEllipseItem):
                     print(f"Znaleziono linię: {item}")  # Debugowanie
                     item.update_position()  # Wywołaj update_position dla każdej linii
 
-    
+class ExplosionEffect(QGraphicsEllipseItem):
+    def __init__(self, x, y, color, parent=None):
+        super().__init__(0, 0, 40, 40, parent)
+        self.setPos(x-20, y-20)
+        self.color = QColor(color)
+        self.current_radius = 20
+        self.max_radius = 60
+        self.growth_rate = 5
+        self.opacity = 1.0
+        self.fade_rate = 0.05
+        
+        gradient = QRadialGradient(20, 20, 20)
+        gradient.setColorAt(0, self.color.lighter(150))
+        gradient.setColorAt(0.7, self.color)
+        gradient.setColorAt(1, Qt.transparent)
+        self.setBrush(QBrush(gradient))
+        self.setPen(QPen(Qt.NoPen))  # Fix: Use QPen(Qt.NoPen) instead of Qt.NoPen
+        
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_effect)
+        self.timer.start(50)
+
+    def update_effect(self):
+        self.current_radius += self.growth_rate
+        self.opacity -= self.fade_rate
+        
+        if self.current_radius >= self.max_radius or self.opacity <= 0:
+            self.timer.stop()
+            self.scene().removeItem(self)
+            return
+            
+        self.setRect(0, 0, self.current_radius*2, self.current_radius*2)
+        self.setPos(self.pos().x() - self.growth_rate, self.pos().y() - self.growth_rate)
+        
+        gradient = QRadialGradient(self.current_radius, self.current_radius, self.current_radius)
+        gradient.setColorAt(0, self.color.lighter(150))
+        gradient.setColorAt(0.7, self.color)
+        gradient.setColorAt(1, Qt.transparent)
+        self.setBrush(QBrush(gradient))
+        self.setOpacity(self.opacity)
+
+
 class GameScene(QGraphicsScene):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -574,7 +618,7 @@ class GameScene(QGraphicsScene):
                 level_text_rect = level_text.boundingRect()
                 level_text.setPos(
                     x + 50 - level_text_rect.width() / 2,
-                    y + 75  # poniżej komórki
+                    y + 100  # poniżej komórki (adjusted to be lower)
                 )
                 self.addItem(level_text)
                 cell.set_level_text(level_text)  # Set reference to level text  
@@ -677,6 +721,11 @@ class GameScene(QGraphicsScene):
                     if (current_pos - end_pos).manhattanLength() < 5:
                         self.removeItem(mini_cell)
                         item.mini_cells.remove(mini_cell)
+
+                        # Po trafieniu w komórkę
+                        attacker = item.start_cell  # Define the attacker here
+                        explosion = ExplosionEffect(end_pos.x(), end_pos.y(), attacker.base_color)
+                        self.addItem(explosion)
 
                         for cell in self.cells:
                             if cell.rect().contains(end_pos):
