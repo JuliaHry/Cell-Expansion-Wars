@@ -26,45 +26,45 @@ class ClickableLine(QGraphicsLineItem):
             print("Brak start_cell lub end_cell w linii")  # Debugowanie
 
     def mousePressEvent(self, event):
-        # Oblicz odległość od początku linii do punktu kliknięcia
+        # Calculate the distance from the click point to the start and end of the line
         clicked_pos = event.scenePos()
         start_pos = self.line().p1()
         end_pos = self.line().p2()
         distance_to_start = QLineF(start_pos, clicked_pos).length()
         distance_to_end = QLineF(end_pos, clicked_pos).length()
-        value_to_add = int(distance_to_start // 50)  # Zaokrąglij w dół do części całkowitych
-        value_to_subtract = int(distance_to_end // 50)  # Zaokrąglij w dół do części całkowitych
+        value_to_add = int(distance_to_start // 50)  # Round down to integer
+        value_to_subtract = int(distance_to_end // 50)  # Round down to integer
 
-        # Dodaj obliczoną wartość do komórki początkowej
+        # Add the calculated value to the starting cell
         if self.start_cell:
             self.start_cell.update_value(value_to_add)
 
-        # Zwiększ obliczoną wartość w komórce końcowej
+        # Update the ending cell
         if self.end_cell:
             if self.start_cell.base_color == self.end_cell.base_color:
-                self.end_cell.update_value(value_to_subtract)  # Zwiększ wartość w końcowej komórce
+                self.end_cell.update_value(value_to_subtract)  # Increase value in the ending cell
             else:
-                self.end_cell.update_value(-value_to_subtract)  # Zmniejsz wartość w końcowej komórce
-            if self.end_cell.base_color == Qt.gray and hasattr(self.end_cell, 'top_text'):
-                self.end_cell.update_top_text(value_to_subtract)  # Zwiększ wartość górnej liczby
+                self.end_cell.update_value(-value_to_subtract)  # Decrease value in the ending cell
 
-                # Sprawdź, czy górna liczba osiągnęła wartość dolnej liczby
-                if hasattr(self.end_cell, 'bottom_text'):
-                    top_value = int(self.end_cell.top_text.toPlainText())
-                    bottom_value = int(self.end_cell.bottom_text.toPlainText())
-                    if top_value >= bottom_value:
-                        if self.start_cell.base_color == QColor("#66C676"):
-                            self.end_cell.convert_to_green()  # Zamień na zieloną komórkę
-                        elif self.start_cell.base_color == QColor("#D8177E"):
-                            self.end_cell.convert_to_pink()  # Zamień na różową komórkę
+            # If the ending cell is gray, calculate the distance to its center
+            if self.end_cell.base_color == Qt.gray:
+                gray_center = self.end_cell.scenePos() + self.end_cell.rect().center()
+                distance_to_gray_center = QLineF(clicked_pos, gray_center).length()
+                gray_value_to_modify = int(distance_to_gray_center // 50)
+                if self.start_cell.base_color == QColor("#66C676"):
+                    print(f"Distance to gray center: {distance_to_gray_center}, Value to add: {gray_value_to_modify}")  # Debugging
+                    self.end_cell.update_top_text(gray_value_to_modify)
+                elif self.start_cell.base_color == QColor("#D8177E"):
+                    print(f"Distance to gray center: {distance_to_gray_center}, Value to subtract: {gray_value_to_modify}")  # Debugging
+                    self.end_cell.update_top_text(-gray_value_to_modify)
 
-        # Zmiana jednego z wewnętrznych kółek z powrotem na białe
+        # Change one of the inner circles back to white
         for circle in self.start_cell.inner_circles:
             if circle.brush().color() == Qt.black:
                 circle.setBrush(QBrush(Qt.white))
                 break
 
-        # Usuń linię ze sceny
+        # Remove the line from the scene
         self.scene().removeItem(self)
         super().mousePressEvent(event)
 
@@ -88,7 +88,7 @@ class ClickableCell(QGraphicsEllipseItem):
     def set_gradient(self):
         if self.base_color == Qt.gray:
             gradient = QRadialGradient(self.rect().center(), self.rect().width() / 2)
-            if hasattr(self, 'fill_color'):
+            if hasattr(self, 'fill_color') and self.fill_color:
                 fill_ratio = min(self.value / 8, 1)  # Calculate the ratio of fill color
                 gradient.setColorAt(0, self.fill_color.lighter(150))  # Lighter fill center
                 gradient.setColorAt(fill_ratio, self.fill_color.darker(150))  # Darker fill edge
@@ -140,17 +140,46 @@ class ClickableCell(QGraphicsEllipseItem):
             if fill_color:
                 self.fill_color = fill_color
             self.set_gradient()  # Update gradient for gray cells
-            if self.value >= 8 and self.fill_color == QColor("#D8177E"):
-                self.convert_to_pink()
     
     def set_top_text(self, text_item):
         self.top_text = text_item
 
     def update_top_text(self, delta):
-        if hasattr(self, 'top_text'):
-            current_value = int(self.top_text.toPlainText())
-            new_value = current_value + delta
-            self.top_text.setPlainText(str(new_value))
+        if not hasattr(self, '_actual_top_value'):
+            self._actual_top_value = 0  # Initialize the actual value if not present
+        self._actual_top_value += delta  # Update the actual value
+        self.top_text.setPlainText(str(abs(self._actual_top_value)))  # Display absolute value
+        print(f"Updated top value on gray cell: {self._actual_top_value}")  # Debugging
+
+        # Check for conversion conditions
+        if self._actual_top_value >= 8:
+            self.convert_to_green()
+            return
+        elif self._actual_top_value <= -8:
+            self.convert_to_pink()
+            return
+
+        # Update the fill color for the gray cell
+        if self.base_color == Qt.gray:
+            gradient = QRadialGradient(self.rect().center(), self.rect().width() / 2)
+            if self._actual_top_value > 0:
+                fill_ratio = min(self._actual_top_value / 8, 1)  # Cap the ratio at 1
+                self.fill_color = QColor("#66C676")  # Green color
+                gradient.setColorAt(0, self.fill_color.lighter(150))  # Lighter center
+                gradient.setColorAt(fill_ratio, self.fill_color.darker(150))  # Darker edge
+                gradient.setColorAt(fill_ratio, self.base_color)  # Transition to gray
+            elif self._actual_top_value < 0:
+                fill_ratio = min(abs(self._actual_top_value) / 8, 1)  # Cap the ratio at 1
+                self.fill_color = QColor("#D8177E")  # Pink color
+                gradient.setColorAt(0, self.fill_color.lighter(150))  # Lighter center
+                gradient.setColorAt(fill_ratio, self.fill_color.darker(150))  # Darker edge
+                gradient.setColorAt(fill_ratio, self.base_color)  # Transition to gray
+            else:
+                self.fill_color = None  # Reset fill color if value is zero
+                self.set_gradient()  # Reset to default gradient
+                return
+            gradient.setColorAt(1, self.base_color)  # Gray edge
+            self.setBrush(QBrush(gradient))
     
     def convert_to_green(self):
         # Zmień kolor na zielony
@@ -547,9 +576,8 @@ class GameScene(QGraphicsScene):
                     mini_cell.setBrush(QBrush(QColor(color)))  # Nowy kolor
                     mini_cell.setPen(QPen(QColor(color), 1))  # Nowy kolor
                     mini_cell.setPos(item.line().p1())
-                    mini_cell.setZValue(1)  # Upewnij się, że kółko jest nad linią
+                    mini_cell.setZValue(1)  # Ensure the mini cell is above the line
                     item.mini_cells.append(mini_cell)
-                    print("Utworzono nowe mini kółko")  # Debugowanie
                 for mini_cell in item.mini_cells:
                     # Przesuń mini kółko wzdłuż linii
                     current_pos = mini_cell.pos()
@@ -558,39 +586,26 @@ class GameScene(QGraphicsScene):
                     step = direction / 10  # Mały krok
                     mini_cell.setPos(current_pos + step)
                     if (current_pos - end_pos).manhattanLength() < 5:
-                        # Usuń mini kółko, gdy dotrze do końca
+                        # Remove the mini cell when it reaches the end
                         self.removeItem(mini_cell)
                         item.mini_cells.remove(mini_cell)
-                        print("Usunięto mini kółko")  # Debugowanie
 
-                        # Znajdź komórkę, do której dotarło mini kółko
+                        # Find the cell the mini cell reached
                         for cell in self.cells:
                             if cell.rect().contains(end_pos):
                                 if cell.base_color == Qt.gray:
-                                    # Zwiększ lub zmniejsz wartość na szarej komórce
-                                    fill_color = QColor("#66C676") if item.start_cell.base_color == QColor("#66C676") else QColor("#D8177E")
-                                    if hasattr(cell, 'fill_color'):
-                                        if cell.fill_color != fill_color:
-                                            cell.update_value(-1, cell.fill_color)
-                                            cell.update_top_text(-1)  # Decrease the top text value
-                                        else:
-                                            cell.update_value(1, fill_color)
-                                            cell.update_top_text(1)  # Increase the top text value
-                                    else:
-                                        cell.update_value(1, fill_color)
-                                        cell.update_top_text(1)  # Increase the top text value
-                                    
-                                    # Sprawdź, czy górna liczba jest równa dolnej liczbie
-                                    if hasattr(cell, 'top_text') and int(cell.top_text.toPlainText()) == 8 and fill_color == QColor("#66C676"):
-                                        cell.convert_to_green()  # Zamień szarą komórkę na zieloną
-                                    elif hasattr(cell, 'top_text') and int(cell.top_text.toPlainText()) == 8 and fill_color == QColor("#D8177E"):
-                                        cell.convert_to_pink()  # Zamień szarą komórkę na różową
-                                elif cell.base_color == QColor("#D8177E") and cell != item.start_cell:
-                                    # Zwiększ wartość na różowej komórce
-                                    cell.update_value(1)
-                                elif cell.base_color == QColor("#66C676") and cell != item.start_cell:
-                                    # Zwiększ wartość na zielonej komórce
-                                    cell.update_value(1)
+                                    if item.start_cell.base_color == QColor("#66C676"):
+                                        # Increase the top value for gray cells when green mini cells enter
+                                        cell.update_top_text(1)
+                                    elif item.start_cell.base_color == QColor("#D8177E"):
+                                        # Decrease the top value for gray cells when pink mini cells enter
+                                        cell.update_top_text(-1)
+                                elif cell.base_color == QColor("#D8177E") and item.start_cell.base_color == QColor("#66C676"):
+                                    # Decrease value on pink cells
+                                    cell.update_value(-1)
+                                elif cell.base_color == QColor("#66C676") and item.start_cell.base_color == QColor("#D8177E"):
+                                    # Decrease value on green cells
+                                    cell.update_value(-1)
                                 break
 
                         # Decrease value on the starting cell
