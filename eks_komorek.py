@@ -335,7 +335,25 @@ class ClickableCell(QGraphicsEllipseItem):
                 self.scene().addItem(inner_circle)
                 self.inner_circles.append(inner_circle)
 
+    def highlight_valid_targets(self):
+        """Highlight valid target cells based on the current cell's level and value."""
+        for cell in self.scene().cells:
+            if cell == self:
+                continue  # Skip the current cell
+            if cell.base_color == Qt.gray or (
+                cell.base_color != self.base_color and 
+                cell.level <= self.level and 
+                cell.value < self.value
+            ):
+                cell.setPen(QPen(QColor("#FFFF00"), 4))  # Highlight with yellow border
+
+    def clear_highlight(self):
+        """Clear the highlight from all cells."""
+        for cell in self.scene().cells:
+            cell.setPen(QPen(Qt.black, 2))  # Reset to default border
+
     def mousePressEvent(self, event):
+            
         if ClickableCell.moving_cell:
             # Usuń pomarańczową obwódkę z poprzedniej komórki
             ClickableCell.moving_cell.setPen(QPen(Qt.black, 2))
@@ -375,13 +393,22 @@ class ClickableCell(QGraphicsEllipseItem):
                             circle.setBrush(QBrush(Qt.black))
                             break
                     
+                    ClickableCell.selected_green.clear_highlight()  # Clear highlights after creating a line
                     ClickableCell.selected_green = None
                     ClickableCell.is_creating_line = False
             else:
+                scene = self.scene()
+                if isinstance(scene, GameScene):
+                    if self.base_color == QColor("#66C676") and scene.current_turn != "green":
+                        return
+                    if self.base_color == QColor("#D8177E") and scene.current_turn != "pink":
+                        return
+
                 print(f"Rozpoczęcie tworzenia linii z {self.base_color.name()}")  # Debugowanie
                 self.setPen(QPen(QColor("#A4DEFA"), 8, Qt.SolidLine))
                 ClickableCell.selected_green = self
                 ClickableCell.is_creating_line = True
+                self.highlight_valid_targets()  # Highlight valid targets
 
         elif self.base_color == Qt.gray and ClickableCell.selected_green:  # Szara komórka
             print(f"Tworzenie linii z2 {ClickableCell.selected_green.base_color.name()} do szarej komórki")  # Debugowanie
@@ -410,6 +437,7 @@ class ClickableCell(QGraphicsEllipseItem):
                     circle.setBrush(QBrush(Qt.black))
                     break
 
+            ClickableCell.selected_green.clear_highlight()  # Clear highlights after creating a line
             ClickableCell.selected_green = None
             ClickableCell.is_creating_line = False
 
@@ -433,6 +461,8 @@ class ClickableCell(QGraphicsEllipseItem):
             self.setPen(QPen(Qt.black, 2))
         elif (self.base_color == Qt.gray or self.base_color == QColor("#D8177E")) and ClickableCell.selected_green:
             self.setPen(QPen(Qt.black, 2))
+        if ClickableCell.is_creating_line and ClickableCell.selected_green == self:
+            self.clear_highlight()  # Clear highlights if the user cancels the action
         super().hoverLeaveEvent(event)
 
     def contextMenuEvent(self, event):
@@ -547,6 +577,49 @@ class GameScene(QGraphicsScene):
         self.value_timer.start(1000)  # Timer co 1000 ms (1 sekunda)
         self.create_menu_button()  # Add this line to create the menu button
         self.create_restart_button()  # Add this line to create the restart button
+        self.current_turn = "green"  # "green" lub "pink"
+        self.turn_timer = QTimer()
+        self.turn_time_limit = 10  # sekund
+        self.turn_remaining = self.turn_time_limit
+
+        self.turn_timer.timeout.connect(self.update_turn_timer)
+        self.turn_timer.start(1000)  # Odliczanie co sekundę
+        self.create_turn_timer_display()
+        self.create_turn_display()  # Add this line to create the turn display
+
+    def create_turn_timer_display(self):
+        """Create a display for the remaining time in the current round."""
+        self.turn_timer_display = QGraphicsTextItem(f"Timer: {self.turn_remaining}s")
+        self.turn_timer_display.setFont(QFont("Arial", 14, QFont.Bold))
+        self.turn_timer_display.setDefaultTextColor(Qt.white)
+        self.turn_timer_display.setPos(600, 50)  # Position the timer display
+        self.addItem(self.turn_timer_display)
+
+    def create_turn_display(self):
+        """Create a display for the current player's turn."""
+        self.turn_display = QGraphicsTextItem(f"Turn: {self.current_turn.capitalize()}")
+        self.turn_display.setFont(QFont("Arial", 16, QFont.Bold))
+        self.turn_display.setDefaultTextColor(Qt.white)
+        self.turn_display.setPos(600, 20)  # Position the turn display above the timer
+        self.addItem(self.turn_display)
+
+    def update_turn_timer(self):
+        """Update the timer display and handle turn switching."""
+        self.turn_remaining -= 1
+        if self.turn_remaining <= 0:
+            self.switch_turn()
+        self.turn_timer_display.setPlainText(f"Timer: {self.turn_remaining}s")
+
+    def switch_turn(self):
+        """Switch the turn and reset the timer."""
+        self.current_turn = "pink" if self.current_turn == "green" else "green"
+        self.turn_remaining = self.turn_time_limit
+        self.turn_timer_display.setPlainText(f"Pozostały czas: {self.turn_remaining}s")
+        self.turn_display.setPlainText(f"Turn: {self.current_turn.capitalize()}")  # Update the turn display
+        ClickableCell.selected_green = None
+        ClickableCell.is_creating_line = False
+        for cell in self.cells:
+            cell.setPen(QPen(Qt.black, 2))
 
     def init_background(self, color1=QColor(10, 10, 50), color2=QColor(20, 20, 100)):
         gradient = QLinearGradient(0, 0, 900, 900)
@@ -566,7 +639,7 @@ class GameScene(QGraphicsScene):
             if isinstance(item, ClickableLine) and item.end_cell == target_cell:
                 return item.start_cell
         return None
-
+    
     def create_cells(self):
         self.cells = []
         cell_positions = [
@@ -690,6 +763,7 @@ class GameScene(QGraphicsScene):
         if isinstance(item, ClickableLine):
             item.mousePressEvent(event)
         elif not isinstance(item, ClickableCell) and ClickableCell.selected_green:
+            ClickableCell.selected_green.clear_highlight()  # Clear highlights when canceling line creation
             ClickableCell.selected_green.setPen(QPen(Qt.black, 2))  # Usunięcie obwódki z zielonego
             ClickableCell.selected_green = None  # Reset wyboru zielonego
             ClickableCell.is_creating_line = False  # Zakończ tworzenie linii
