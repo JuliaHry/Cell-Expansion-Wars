@@ -4,7 +4,7 @@
 
 Projekt to turowa gra strategiczna zaimplementowana w PyQt5, w której dwie strony (zielona i różowa) rywalizują o przejęcie nwszystkich komórek na planszy. Gra posiada system walki, poziomy jednostek, efekty wizualne oraz mechanizm tur i AI podpowiadające najlepszy ruch. Interfejs oparty jest na QGraphicsScene i QGraphicsItem.
 
-### Wymagania zaliczone w projekcie
+### Wymagania spełnione w projekcie (projekt wykonany łącznie na 17 pkt)
 
 - QGraphicsScene – implementacja sceny gry (1 pkt)
 
@@ -70,7 +70,6 @@ Projekt to turowa gra strategiczna zaimplementowana w PyQt5, w której dwie stro
 
   - Niezaimplementowane.
 
-**Podsumowując - projekt został wykonany na 17pkt**
 
 ### Jak uruchomić projekt
 
@@ -83,13 +82,27 @@ Projekt to turowa gra strategiczna zaimplementowana w PyQt5, w której dwie stro
 - Uruchomienie gry
 
   - python main.py
+
     
 
-### Główne okno zawiera:
+### Podstawowe zasady gry:
 
-  - Menu główne z opcjami gry i wyboru poziomu.
+Celem gry jest przejęcie przez gracza wszystkich komórek na planszy. Gra działa turowo każdy gracz kolejno dostaje 10 sekund na wykonywanie ruchów. 
 
-  - Tryb gry z systemem tur, wartości, ataków i poziomów.
+Gracz atakuje inne komórki poprzez utworzenie mostu łączącego go z inną komórką. W tym celu należy kliknąć lewym przyciskiem myszy na komórkę atakującą (zacznie się wówczas za myszką tworzyć linia od środka tej komórki), a następnie 
+lewym przyciskiem myszy kliknąć na komórkę, którą chcemy zaatakować. Wówczas utworzy się most, którym mini komórki będą opuszczać komórkę atakującą i wchodzić do komórki atakowanej. Moc ataku zależy od poziomu komórki. 
 
-  - Podpowiedzi, logger, licznik czasu i system podświetlania.
+**Zasady ataku:**
+
+  - Gdy most łączy komórki tego samego koloru - wartość na komórce początkowej maleje, a końcowej wzrasta
+    
+  - Gdy most łączy komórkę z komórką wroga - wartości na obu komórkach maleją. Gdy wartość komórki wroga osiągnie 0, zostaje ona przejęta przez komórkę przeciwnika.
+
+  - Gdy most łączy komórkę z szarą komórką - górna liczba na szarej komórce zwiększa się, gdy wypełnia ją dany kolor i zmniejsza, gdy częściowo wypełniona już jest danym kolorem i zaczyna wypełniać ją inny kolor.Gdy górna liczba osiągnie wartość dolnej liczby - komórka zamienia się w komórkę należącą do drużyny, która wypełniła ją swoim kolorem.
+
+  - Każda komórka może stworzyć 2 mosty. Gdy oba kółka na komórce będą czarne, nie będzie ona mogła utworzyć kolejnego mostu.
+
+**Usuwanie mostów:**
+
+  - Aby usunąć most należy na niego kliknąć lewym przyciskiem myszy. Gdy klikniemy bliżej komórki atakującej, więcej komórek do niej powróci. Gdy bliżej komórki atakowanej - więcej komórek ją zaatakuje. 
 
