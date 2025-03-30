@@ -618,6 +618,16 @@ class GameScene(QGraphicsScene):
         self.turn_display.setPlainText(f"Turn: {self.current_turn.capitalize()}")  # Update the turn display
         ClickableCell.selected_green = None
         ClickableCell.is_creating_line = False
+
+        # Clear suggestion label
+        view = self.views()[0]
+        view.suggestion_label.hide()
+
+        # Remove "Attacker" and "Target" labels
+        for item in self.items():
+            if isinstance(item, QGraphicsTextItem) and item.data(0) == "suggestion_label":
+                self.removeItem(item)
+
         for cell in self.cells:
             cell.setPen(QPen(Qt.black, 2))
 
@@ -902,17 +912,76 @@ class GameScene(QGraphicsScene):
         restart_button.mousePressEvent = self.restart_game
 
     def restart_game(self, event):
+        view = self.views()[0]
+        view.suggestion_label.hide()  # Hide the suggestion label
         self.clear()  # Clear the scene
         self.init_background()  # Reinitialize the background
         self.create_cells()  # Recreate the cells
         self.create_menu_button()  # Recreate the menu button
         self.create_restart_button()  # Recreate the restart button
+        self.create_turn_timer_display()  # Recreate the turn timer display
+        self.create_turn_display()  # Recreate the turn display
         self.timer.start(30)  # Restart the mini cell movement timer
         self.value_timer.start(1000)  # Restart the cell value increase timer
+        self.turn_remaining = self.turn_time_limit  # Reset the turn timer
+        self.current_turn = "green"  # Reset the turn to green
+        self.turn_timer.start(1000)  # Restart the turn timer
 
     def back_to_main_menu(self, event):
         view = self.views()[0]
+        view.suggestion_label.hide()  # Hide the suggestion label
         view.setScene(MainMenuScene())
+
+    def suggest_best_move(self):
+        """Provide a basic AI suggestion for the best move."""
+        best_move = None
+        max_value_difference = -float('inf')
+
+        # Clear previous suggestion labels
+        for item in self.items():
+            if isinstance(item, QGraphicsTextItem) and item.data(0) == "suggestion_label":
+                self.removeItem(item)
+
+        for cell in self.cells:
+            if cell.base_color == QColor("#66C676") and self.current_turn == "green":
+                for target in self.cells:
+                    if target != cell and target.base_color != QColor("#66C676"):
+                        value_difference = cell.value - target.value
+                        if value_difference > max_value_difference:
+                            max_value_difference = value_difference
+                            best_move = (cell, target)
+            elif cell.base_color == QColor("#D8177E") and self.current_turn == "pink":
+                for target in self.cells:
+                    if target != cell and target.base_color != QColor("#D8177E"):
+                        value_difference = cell.value - target.value
+                        if value_difference > max_value_difference:
+                            max_value_difference = value_difference
+                            best_move = (cell, target)
+
+        if best_move:
+            source, target = best_move
+            suggestion = f"Attack from cell at ({source.rect().x()}, {source.rect().y()}) to cell at ({target.rect().x()}, {target.rect().y()})."
+
+            # Add "Attacker" label above the source cell
+            attacker_label = QGraphicsTextItem("Attacker")
+            attacker_label.setFont(QFont("Arial", 12, QFont.Bold))
+            attacker_label.setDefaultTextColor(Qt.green if self.current_turn == "green" else Qt.red)
+            attacker_label.setPos(source.rect().x() + 50 - attacker_label.boundingRect().width() / 2, source.rect().y() - 20)
+            attacker_label.setData(0, "suggestion_label")  # Mark as suggestion label
+            self.addItem(attacker_label)
+
+            # Add "Target" label above the target cell
+            target_label = QGraphicsTextItem("Target")
+            target_label.setFont(QFont("Arial", 12, QFont.Bold))
+            target_label.setDefaultTextColor(Qt.green if self.current_turn == "green" else Qt.red)
+            target_label.setPos(target.rect().x() + 50 - target_label.boundingRect().width() / 2, target.rect().y() - 20)
+            target_label.setData(0, "suggestion_label")  # Mark as suggestion label
+            self.addItem(target_label)
+        else:
+            suggestion = "No valid moves available."
+
+        view = self.views()[0]
+        view.display_suggestion(suggestion)
 
 class LevelSelectionScene(QGraphicsScene):
     def __init__(self, parent=None):
@@ -1055,7 +1124,14 @@ class HoverableRectItem(QGraphicsRectItem):
 class GameView(QGraphicsView):
     def __init__(self):
         super().__init__()
-        self.setScene(MainMenuScene())
+        self.suggestion_button = QPushButton("PODPOWIEDŹ", self)  # Initialize suggestion button first
+        self.suggestion_button.setGeometry(400, 830, 100, 40)  # Position and size of the button
+        self.suggestion_button.setFont(QFont("Arial", 9, QFont.Bold))
+        self.suggestion_button.setStyleSheet("background-color: rgb(10, 10, 50); color: white;")
+        self.suggestion_button.clicked.connect(self.request_suggestion)
+        self.suggestion_button.hide()  # Initially hide the button
+
+        self.setScene(MainMenuScene())  # Call setScene after initializing suggestion_button
         self.setRenderHint(QPainter.Antialiasing)
         self.setFixedSize(900, 900)
         self.message_label = QGraphicsTextItem("")
@@ -1081,8 +1157,23 @@ class GameView(QGraphicsView):
         self.end_button.setStyleSheet("background-color: rgb(10, 10, 50); color: white;")  # Kolor tła i tekstu przycisku
         self.end_button.clicked.connect(self.hide_message)
         self.end_button.hide()  # Initially hide the button
-        
+
+        self.suggestion_label = QLabel("", self)
+        self.suggestion_label.setStyleSheet("color: white; background-color: rgba(10, 10, 50, 200); padding: 5px;")
+        self.suggestion_label.setFont(QFont("Arial", 10, QFont.Bold))
+        self.suggestion_label.setGeometry(40, 790, 820, 30)  # Lowered by 100 pixels
+        self.suggestion_label.setAlignment(Qt.AlignCenter)
+        self.suggestion_label.hide()
+
         self.show()
+
+    def setScene(self, scene):
+        super().setScene(scene)
+        # Show or hide the suggestion button based on the scene type
+        if isinstance(scene, GameScene):
+            self.suggestion_button.show()
+        else:
+            self.suggestion_button.hide()
 
     def display_message(self, message):
         self.message_label.setPlainText(message)
@@ -1096,6 +1187,16 @@ class GameView(QGraphicsView):
         if ClickableCell.moving_cell:
             ClickableCell.moving_cell.setPen(QPen(Qt.black, 2))  # Usuń pomarańczową obwódkę
             ClickableCell.moving_cell = None  # Reset komórki w trybie przesuwania
+
+    def display_suggestion(self, suggestion):
+        """Display the AI suggestion."""
+        self.suggestion_label.setText(suggestion)
+        self.suggestion_label.show()
+
+    def request_suggestion(self):
+        """Request a suggestion from the game scene."""
+        if isinstance(self.scene(), GameScene):
+            self.scene().suggest_best_move()
 
     def keyPressEvent(self, event):
         if ClickableCell.moving_cell:
