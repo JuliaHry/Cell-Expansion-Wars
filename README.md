@@ -22,6 +22,8 @@ Projekt to turowa gra strategiczna zaimplementowana w PyQt5, w której dwie stro
 
   - Możliwość przesuwania komórek za pomocą klawiatury (tryb przesuwania) - aby go odpalić należy wybrać opcję "Przesuń komórkę" z menu kontekstowego komórek. Wprowadza to komórki w tryb przesuwania. Obługa przesuwania odywa się za pomocą klawiatury.
   - Aby przesuwać inną komórkę, należy - wciąż będąc w trybie przesuwania - kliknąć lewym przyciskiem myszy na inną komórkę (komórka aktualnie przesuwana zaznaczona jest pomarańczową obwódką). Aby opuścić tryb przesuwania należy kliknąć przycisk "ZAKOŃCZ"
+ 
+  
 
 - Sterowanie jednostkami – wybór z menu i ruch na siatce planszy (2 pkt)
 
@@ -66,9 +68,11 @@ Projekt to turowa gra strategiczna zaimplementowana w PyQt5, w której dwie stro
 
   - Klasa Logger zapisuje logi do konsoli i do widgetu QTextEdit z limitem 100 linii.
 
-- Sterowanie jednostkami za pomocą gestów z kamery (kliknięcie ruchem dłoni) (1 pkt) oraz Przełączanie widoku między 2D i 3D (w tym renderowanie jednostek w 3D) (2 pkt)
+- Możliwość zapisania stanu gry i kontynuacji po kolejnym otworzeniu
 
-  - Niezaimplementowane.
+- Możliwość zapisania i obejrzenia przebiegu rozgrywki zapisanych z trzech typach plików: xml, json, mongodb
+
+
 
 
 ### Jak uruchomić projekt
