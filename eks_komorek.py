@@ -1,79 +1,101 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QGraphicsScene, QGraphicsView, QGraphicsEllipseItem, QGraphicsTextItem, QGraphicsLineItem, QMenu, QAction, QPushButton, QGraphicsRectItem, QGraphicsPixmapItem, QLabel
+from PyQt5.QtWidgets import QApplication, QGraphicsScene, QGraphicsView, QGraphicsEllipseItem, QGraphicsTextItem, QGraphicsLineItem, QMenu, QAction, QPushButton, QGraphicsRectItem, QGraphicsPixmapItem, QLabel, QTextEdit, QDialog, QVBoxLayout, QRadioButton, QButtonGroup, QDialogButtonBox
 from PyQt5.QtGui import QBrush, QPen, QLinearGradient, QRadialGradient, QColor, QPainter, QFont, QTransform, QPixmap
 from PyQt5.QtCore import Qt, QRectF, QLineF, QPointF, QTimer
 from random import uniform
-
-# Import zasobów z pliku resources.py
+from PyQt5.QtWidgets import QLineEdit
+from PyQt5.QtGui import QRegExpValidator
+from PyQt5.QtCore import QRegExp
+from network import NetworkClient, NetworkServer
+import os
+import subprocess
+import xml.etree.ElementTree as ET
+import json
 import resources
+import pickle
+from PyQt5.QtWidgets import QMessageBox
+import xml.etree.ElementTree as ET
+
+game_view_instance = None
+
+class Logger:
+    def __init__(self, log_widget=None, max_lines=100):
+        self.log_widget = log_widget
+        self.max_lines = max_lines
+        self.log_buffer = []
+
+    def log(self, message):
+ 
+        print(message)
+
+        if self.log_widget:
+            self.log_buffer.append(message)
+            if len(self.log_buffer) > self.max_lines:
+                self.log_buffer.pop(0)
+            self.log_widget.setPlainText("\n".join(self.log_buffer))
+            self.log_widget.verticalScrollBar().setValue(self.log_widget.verticalScrollBar().maximum())
 
 class ClickableLine(QGraphicsLineItem):
     def __init__(self, line, start_cell, end_cell=None, parent=None):
         super().__init__(line, parent)
         color = "#D8177E" if start_cell.base_color == QColor("#D8177E") else "#66C676"
         self.setPen(QPen(QColor(color), 8))
-        self.setZValue(-1)  # Linia jest pod komórkami
+        self.setZValue(-1) 
         self.start_cell = start_cell
         self.end_cell = end_cell
-        self.mini_cells = []  # Przechowuje referencje do mini kółek
+        self.mini_cells = []  
  
     def update_position(self):
         if self.start_cell and self.end_cell:
             start_pos = self.start_cell.scenePos() + self.start_cell.rect().center()
             end_pos = self.end_cell.scenePos() + self.end_cell.rect().center()
-            print(f"Aktualizacja linii: start_pos={start_pos}, end_pos={end_pos}")  # Debugowanie
+            game_view_instance.logger.log(f"Aktualizacja linii: start_pos={start_pos}, end_pos={end_pos}")
             self.setLine(QLineF(start_pos, end_pos))
         else:
-            print("Brak start_cell lub end_cell w linii")  # Debugowanie
+            game_view_instance.logger.log("Brak start_cell lub end_cell w linii")
 
     def mousePressEvent(self, event):
-        # Calculate the distance from the click point to the start and end of the line
         clicked_pos = event.scenePos()
         start_pos = self.line().p1()
         end_pos = self.line().p2()
         distance_to_start = QLineF(start_pos, clicked_pos).length()
         distance_to_end = QLineF(end_pos, clicked_pos).length()
-        value_to_add = int(distance_to_start // 50)  # Round down to integer
-        value_to_subtract = int(distance_to_end // 50)  # Round down to integer
+        value_to_add = int(distance_to_start // 50) 
+        value_to_subtract = int(distance_to_end // 50)  
 
-        # Add the calculated value to the starting cell
         if self.start_cell:
             self.start_cell.update_value(value_to_add)
 
-        # Update the ending cell
         if self.end_cell:
             if self.start_cell.base_color == self.end_cell.base_color:
-                self.end_cell.update_value(value_to_subtract)  # Increase value in the ending cell
+                self.end_cell.update_value(value_to_subtract)  
             else:
-                self.end_cell.update_value(-value_to_subtract)  # Decrease value in the ending cell
+                self.end_cell.update_value(-value_to_subtract)  
 
-            # If the ending cell is gray, calculate the distance to its center
             if self.end_cell.base_color == Qt.gray:
                 gray_center = self.end_cell.scenePos() + self.end_cell.rect().center()
                 distance_to_gray_center = QLineF(clicked_pos, gray_center).length()
                 gray_value_to_modify = int(distance_to_gray_center // 50)
                 if self.start_cell.base_color == QColor("#66C676"):
-                    print(f"Distance to gray center: {distance_to_gray_center}, Value to add: {gray_value_to_modify}")  # Debugging
+                    game_view_instance.logger.log(f"Distance to gray center: {distance_to_gray_center}, Value to add: {gray_value_to_modify}")
                     self.end_cell.update_top_text(gray_value_to_modify)
                 elif self.start_cell.base_color == QColor("#D8177E"):
-                    print(f"Distance to gray center: {distance_to_gray_center}, Value to subtract: {gray_value_to_modify}")  # Debugging
+                    game_view_instance.logger.log(f"Distance to gray center: {distance_to_gray_center}, Value to subtract: {gray_value_to_modify}")
                     self.end_cell.update_top_text(-gray_value_to_modify)
 
-        # Change one of the inner circles back to white
         for circle in self.start_cell.inner_circles:
             if circle.brush().color() == Qt.black:
                 circle.setBrush(QBrush(Qt.white))
                 break
 
-        # Remove the line from the scene
         self.scene().removeItem(self)
         super().mousePressEvent(event)
 
 
 class ClickableCell(QGraphicsEllipseItem):
-    selected_green = None  # Przechowuje referencję do wybranej zielonej komórki
-    is_creating_line = False  # Flaga informująca, czy trwa tworzenie linii
-    moving_cell = None  # Przechowuje referencję do komórki w trybie przesuwania
+    selected_green = None  
+    is_creating_line = False  
+    moving_cell = None  
 
     def __init__(self, rect, color, value, parent=None):
         super().__init__(rect, parent)
@@ -81,50 +103,45 @@ class ClickableCell(QGraphicsEllipseItem):
         self.value = value
         self.set_gradient()
         self.setPen(QPen(Qt.black, 2))
-        self.setAcceptHoverEvents(True)  # Włącz zdarzenia hover dla komórki
+        self.setAcceptHoverEvents(True)  
         self.is_selected = False
-        self.inner_circles = []  # Przechowuje referencje do wewnętrznych kółek
-        self.value_text = None  # Referencja do tekstu wyświetlającego wartość
-        self.level = 1  # Poziom komórki (domyślnie 1)
+        self.inner_circles = []  
+        self.value_text = None  
+        self.level = 1  
     
     def set_gradient(self):
         if self.base_color == Qt.gray:
             gradient = QRadialGradient(self.rect().center(), self.rect().width() / 2)
             if hasattr(self, 'fill_color') and self.fill_color:
-                fill_ratio = min(self.value / 8, 1)  # Calculate the ratio of fill color
-                gradient.setColorAt(0, self.fill_color.lighter(150))  # Lighter fill center
-                gradient.setColorAt(fill_ratio, self.fill_color.darker(150))  # Darker fill edge
-                gradient.setColorAt(fill_ratio, self.base_color)  # Transition to gray
-            gradient.setColorAt(1, self.base_color)  # Gray edge
+                fill_ratio = min(self.value / 8, 1) 
+                gradient.setColorAt(0, self.fill_color.lighter(150)) 
+                gradient.setColorAt(fill_ratio, self.fill_color.darker(150)) 
+                gradient.setColorAt(fill_ratio, self.base_color) 
+            gradient.setColorAt(1, self.base_color)  
             self.setBrush(QBrush(gradient))
         else:
-            # Załaduj obrazek z zasobów
             if self.base_color == QColor("#66C676"):
                 pixmap = QPixmap(":/images/green_cell.png")
             elif self.base_color == QColor("#D8177E"):
                 pixmap = QPixmap(":/images/pink_cell.png")
             else:
                 pixmap = QPixmap()
-            
-            # Przeskaluj obrazek do rozmiaru komórki
+        
             if not pixmap.isNull():
                 pixmap = pixmap.scaled(self.rect().size().toSize(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 
-                # Utwórz QBrush z obrazkiem i przesunięciem
                 brush = QBrush(pixmap)
-                
-                # Oblicz przesunięcie, aby środek obrazka był na środku kółka
+        
                 offset_x = 50
                 offset_y = 50
-                
-                # Ustaw przesunięcie
+
                 brush.setTransform(QTransform().translate(offset_x, offset_y))
                 
                 self.setBrush(brush)
             else:
                 gradient = QRadialGradient(self.rect().center(), self.rect().width() / 2)
-                gradient.setColorAt(0, self.base_color.lighter(150))  # Lighter center
-                gradient.setColorAt(1, self.base_color.darker(150))  # Darker edge
+                gradient.setColorAt(0, self.base_color.lighter(150)) 
+                gradient.setColorAt(1, self.base_color.darker(150)) 
                 self.setBrush(QBrush(gradient))
     
     def set_value_text(self, text_item):
@@ -134,7 +151,7 @@ class ClickableCell(QGraphicsEllipseItem):
         self.level_text = text_item
 
     def get_attack_power_per_mini_cell(self):
-        return self.level  # albo: return max(1, round(self.level * 1.5))
+        return self.level 
 
 
     def increase_level(self):
@@ -150,30 +167,46 @@ class ClickableCell(QGraphicsEllipseItem):
         return self.level * self.value
 
     
-    def update_value(self, delta, fill_color=None):
+    def update_value(self, delta, fill_color=None, caused_by_enemy=False):
         self.value += delta
         if self.value > 30:
             self.value = 30
         if self.value_text:
             self.value_text.setPlainText(str(self.value))
-        if self.base_color == QColor("#D8177E") and self.value <= 0:
-            self.convert_to_green()
-        elif self.base_color == QColor("#66C676") and self.value <= 0:
-            self.convert_to_pink()  # Convert green cell to pink when value reaches 0
+
+        if self.value <= 0:
+            if caused_by_enemy:
+                if self.base_color == QColor("#D8177E"):
+                    self.convert_to_green()
+                elif self.base_color == QColor("#66C676"):
+                    self.convert_to_pink()
+            else:
+                self.remove_lines()
+
         if self.base_color == Qt.gray:
             if fill_color:
                 self.fill_color = fill_color
-            self.set_gradient()  # Update gradient for gray cells
+            self.set_gradient() 
     
+    def remove_lines(self):
+        """Remove all outgoing lines connected to this cell, reset inner circles to white, and allow line creation."""
+        for item in self.scene().items():
+            if isinstance(item, ClickableLine) and item.start_cell == self:
+                self.scene().removeItem(item)
+        for circle in self.inner_circles:
+            if circle.brush().color() == Qt.black:
+                circle.setBrush(QBrush(Qt.white))
+        self.is_selected = False
+
     def set_top_text(self, text_item):
         self.top_text = text_item
 
     def update_top_text(self, delta):
         if not hasattr(self, '_actual_top_value'):
-            self._actual_top_value = 0  # Initialize the actual value if not present
-        self._actual_top_value += delta  # Update the actual value
-        self.top_text.setPlainText(str(abs(self._actual_top_value)))  # Display absolute value
-        print(f"Updated top value on gray cell: {self._actual_top_value}")  # Debugging
+            self._actual_top_value = 0 
+        self._actual_top_value += delta 
+        self.top_text.setPlainText(str(abs(self._actual_top_value)))
+        game_view_instance.logger.log(f"Updated top value on gray cell: {self._actual_top_value}")
 
         if self._actual_top_value >= 8:
             self.convert_to_green(attacker=self.scene().get_attacker(self))
@@ -181,7 +214,6 @@ class ClickableCell(QGraphicsEllipseItem):
             self.convert_to_pink(attacker=self.scene().get_attacker(self))
 
 
-        # Check for conversion conditions
         if self._actual_top_value >= 8:
             self.convert_to_green()
             return
@@ -189,42 +221,38 @@ class ClickableCell(QGraphicsEllipseItem):
             self.convert_to_pink()
             return
 
-        # Update the fill color for the gray cell
         if self.base_color == Qt.gray:
             gradient = QRadialGradient(self.rect().center(), self.rect().width() / 2)
             if self._actual_top_value > 0:
-                fill_ratio = min(self._actual_top_value / 8, 1)  # Cap the ratio at 1
-                self.fill_color = QColor("#66C676")  # Green color
-                gradient.setColorAt(0, self.fill_color.lighter(150))  # Lighter center
-                gradient.setColorAt(fill_ratio, self.fill_color.darker(150))  # Darker edge
-                gradient.setColorAt(fill_ratio, self.base_color)  # Transition to gray
+                fill_ratio = min(self._actual_top_value / 8, 1) 
+                self.fill_color = QColor("#66C676") 
+                gradient.setColorAt(0, self.fill_color.lighter(150)) 
+                gradient.setColorAt(fill_ratio, self.fill_color.darker(150)) 
+                gradient.setColorAt(fill_ratio, self.base_color)  
             elif self._actual_top_value < 0:
-                fill_ratio = min(abs(self._actual_top_value) / 8, 1)  # Cap the ratio at 1
-                self.fill_color = QColor("#D8177E")  # Pink color
-                gradient.setColorAt(0, self.fill_color.lighter(150))  # Lighter center
-                gradient.setColorAt(fill_ratio, self.fill_color.darker(150))  # Darker edge
-                gradient.setColorAt(fill_ratio, self.base_color)  # Transition to gray
+                fill_ratio = min(abs(self._actual_top_value) / 8, 1) 
+                self.fill_color = QColor("#D8177E")  
+                gradient.setColorAt(0, self.fill_color.lighter(150)) 
+                gradient.setColorAt(fill_ratio, self.fill_color.darker(150)) 
+                gradient.setColorAt(fill_ratio, self.base_color) 
             else:
-                self.fill_color = None  # Reset fill color if value is zero
-                self.set_gradient()  # Reset to default gradient
+                self.fill_color = None  
+                self.set_gradient()  
                 return
-            gradient.setColorAt(1, self.base_color)  # Gray edge
+            gradient.setColorAt(1, self.base_color) 
             self.setBrush(QBrush(gradient))
     
     def convert_to_green(self, attacker=None):
-        # Zmień kolor na zielony
         self.base_color = QColor("#66C676")
         self.set_gradient()
         
         if attacker:
             attacker.increase_level()
 
-        # Ustaw wartość na 20
         self.value = 20
         if self.value_text:
             self.value_text.setPlainText("20")
         else:
-            # Dodaj tekst wyświetlający wartość, jeśli go nie ma
             text_item = QGraphicsTextItem("20")
             text_item.setFont(QFont("Arial", 14, QFont.Bold))
             text_item.setDefaultTextColor(Qt.white)
@@ -236,12 +264,10 @@ class ClickableCell(QGraphicsEllipseItem):
             self.scene().addItem(text_item)
             self.set_value_text(text_item)
         
-        # Resetuj poziom do 1, jeśli był wyższy
         if self.level > 1:
             self.level = 1
         self.update_level_display()
 
-        # Dodaj tekst poziomu, jeśli go nie ma
         if not hasattr(self, 'level_text'):
             level_text = QGraphicsTextItem("LVL 1")
             level_text.setFont(QFont("Arial", 10))
@@ -249,7 +275,7 @@ class ClickableCell(QGraphicsEllipseItem):
             level_text_rect = level_text.boundingRect()
             level_text.setPos(
                 self.rect().x() + 50 - level_text_rect.width() / 2,
-                self.rect().y() + 90  # poniżej komórki
+                self.rect().y() + 90
             )
             self.scene().addItem(level_text)
             self.set_level_text(level_text)
@@ -263,30 +289,26 @@ class ClickableCell(QGraphicsEllipseItem):
             self.scene().removeItem(self.bottom_text)
             del self.bottom_text
         
-        # Dodaj dwa wewnętrzne kółka (jeśli ich nie ma)
         if not self.inner_circles:
             for dx, dy in [(-20, -20), (20, 20)]:
                 inner_circle = QGraphicsEllipseItem(self.rect().x() + 50 + dx - 10, self.rect().y() + 50 + dy - 10, 20, 20)
                 inner_circle.setBrush(QBrush(Qt.white))
                 inner_circle.setPen(QPen(Qt.black, 1))
-                inner_circle.setZValue(1)  # Kółka są na wierzchu komórek
+                inner_circle.setZValue(1)  
                 self.scene().addItem(inner_circle)
                 self.inner_circles.append(inner_circle)
     
     def convert_to_pink(self, attacker=None):
-        # Zmień kolor na różowy
         self.base_color = QColor("#D8177E")
         self.set_gradient()
 
         if attacker:
             attacker.increase_level()
         
-        # Ustaw wartość na 20
         self.value = 20
         if self.value_text:
             self.value_text.setPlainText("20")
         else:
-            # Dodaj tekst wyświetlający wartość, jeśli go nie ma
             text_item = QGraphicsTextItem("20")
             text_item.setFont(QFont("Arial", 14, QFont.Bold))
             text_item.setDefaultTextColor(Qt.white)
@@ -298,12 +320,10 @@ class ClickableCell(QGraphicsEllipseItem):
             self.scene().addItem(text_item)
             self.set_value_text(text_item)
         
-        # Resetuj poziom do 1, jeśli był wyższy
         if self.level > 1:
             self.level = 1
         self.update_level_display()
 
-        # Dodaj tekst poziomu, jeśli go nie ma
         if not hasattr(self, 'level_text'):
             level_text = QGraphicsTextItem("LVL 1")
             level_text.setFont(QFont("Arial", 10))
@@ -311,12 +331,11 @@ class ClickableCell(QGraphicsEllipseItem):
             level_text_rect = level_text.boundingRect()
             level_text.setPos(
                 self.rect().x() + 50 - level_text_rect.width() / 2,
-                self.rect().y() + 75  # poniżej komórki
+                self.rect().y() + 75 
             )
             self.scene().addItem(level_text)
             self.set_level_text(level_text)
         
-        # Usuń liczby z szarej komórki
         if hasattr(self, 'top_text'):
             self.scene().removeItem(self.top_text)
             del self.top_text
@@ -324,65 +343,61 @@ class ClickableCell(QGraphicsEllipseItem):
         if hasattr(self, 'bottom_text'):
             self.scene().removeItem(self.bottom_text)
             del self.bottom_text
+            
         
-        # Dodaj dwa wewnętrzne kółka (jeśli ich nie ma)
         if not self.inner_circles:
             for dx, dy in [(-20, -20), (20, 20)]:
                 inner_circle = QGraphicsEllipseItem(self.rect().x() + 50 + dx - 10, self.rect().y() + 50 + dy - 10, 20, 20)
                 inner_circle.setBrush(QBrush(QBrush(Qt.white)))
                 inner_circle.setPen(QPen(Qt.black, 1))
-                inner_circle.setZValue(1)  # Kółka są na wierzchu komórek
+                inner_circle.setZValue(1) 
                 self.scene().addItem(inner_circle)
                 self.inner_circles.append(inner_circle)
 
     def highlight_valid_targets(self):
-        """Highlight valid target cells based on the current cell's level and value."""
         for cell in self.scene().cells:
             if cell == self:
-                continue  # Skip the current cell
+                continue 
             if cell.base_color == Qt.gray or (
                 cell.base_color != self.base_color and 
                 cell.level <= self.level and 
                 cell.value < self.value
             ):
-                cell.setPen(QPen(QColor("#FFFF00"), 4))  # Highlight with yellow border
+                cell.setPen(QPen(QColor("#FFFF00"), 4))  
 
     def clear_highlight(self):
-        """Clear the highlight from all cells."""
         for cell in self.scene().cells:
-            cell.setPen(QPen(Qt.black, 2))  # Reset to default border
+            cell.setPen(QPen(Qt.black, 2))
 
     def mousePressEvent(self, event):
             
         if ClickableCell.moving_cell:
-            # Usuń pomarańczową obwódkę z poprzedniej komórki
             ClickableCell.moving_cell.setPen(QPen(Qt.black, 2))
             self.setPen(QPen(QColor("#FFA500"), 8, Qt.SolidLine))
             ClickableCell.moving_cell = self
             return
 
-        if self.base_color == QColor("#66C676") or self.base_color == QColor("#D8177E"):  # Zielona lub różowa komórka
+        if self.base_color == QColor("#66C676") or self.base_color == QColor("#D8177E"): 
             if all(circle.brush().color() == Qt.black for circle in self.inner_circles):
-                print("Oba wewnętrzne kółka są czarne, nie można wybrać komórki.")  # Debugowanie
+                game_view_instance.logger.log("Oba wewnętrzne kółka są czarne, nie można wybrać komórki.")
                 return
             
             if ClickableCell.is_creating_line:
                 if ClickableCell.selected_green and ClickableCell.selected_green != self:
-                    print(f"Tworzenie linii z1 {ClickableCell.selected_green.base_color.name()} do {self.base_color.name()}")  # Debugowanie
+                    game_view_instance.logger.log(f"Tworzenie linii z1 {ClickableCell.selected_green.base_color.name()} do {self.base_color.name()}")
                     start_pos = ClickableCell.selected_green.scenePos() + ClickableCell.selected_green.rect().center()
                     end_pos = self.scenePos() + self.rect().center()
                     line_length = QLineF(start_pos, end_pos).length()
                     cost = int(line_length // 50)
-                    print(f"Koszt stworzenia linii: {cost}, długość linii: {line_length}")  # Debugowanie
+                    game_view_instance.logger.log(f"Koszt stworzenia linii: {cost}, długość linii: {line_length}")
 
                     if cost > ClickableCell.selected_green.value:
-                        print("Koszt stworzenia linii przekracza wartość komórki, linia nie może zostać utworzona.")  # Debugowanie
+                        game_view_instance.logger.log("Koszt stworzenia linii przekracza wartość komórki, linia nie może zostać utworzona.")
                         return
 
                     line = ClickableLine(QLineF(start_pos, end_pos), ClickableCell.selected_green, self)
                     self.scene().addItem(line)
                     
-                    # Oblicz koszt stworzenia mostu dla wszystkich komórek
                     ClickableCell.selected_green.update_value(-cost)
                     
                     ClickableCell.selected_green.setPen(QPen(Qt.black, 2))
@@ -393,7 +408,7 @@ class ClickableCell(QGraphicsEllipseItem):
                             circle.setBrush(QBrush(Qt.black))
                             break
                     
-                    ClickableCell.selected_green.clear_highlight()  # Clear highlights after creating a line
+                    ClickableCell.selected_green.clear_highlight()  
                     ClickableCell.selected_green = None
                     ClickableCell.is_creating_line = False
             else:
@@ -404,26 +419,26 @@ class ClickableCell(QGraphicsEllipseItem):
                     if self.base_color == QColor("#D8177E") and scene.current_turn != "pink":
                         return
 
-                print(f"Rozpoczęcie tworzenia linii z {self.base_color.name()}")  # Debugowanie
+                game_view_instance.logger.log(f"Rozpoczęcie tworzenia linii z {self.base_color.name()}")
                 self.setPen(QPen(QColor("#A4DEFA"), 8, Qt.SolidLine))
                 ClickableCell.selected_green = self
                 ClickableCell.is_creating_line = True
-                self.highlight_valid_targets()  # Highlight valid targets
+                self.highlight_valid_targets() 
 
-        elif self.base_color == Qt.gray and ClickableCell.selected_green:  # Szara komórka
-            print(f"Tworzenie linii z2 {ClickableCell.selected_green.base_color.name()} do szarej komórki")  # Debugowanie
+        elif self.base_color == Qt.gray and ClickableCell.selected_green:  
+            game_view_instance.logger.log(f"Tworzenie linii z2 {ClickableCell.selected_green.base_color.name()} do szarej komórki")
             if all(circle.brush().color() == Qt.black for circle in ClickableCell.selected_green.inner_circles):
-                print("Oba wewnętrzne kółka w komórce startowej są czarne, nie można stworzyć linii.")  # Debugowanie
+                game_view_instance.logger.log("Oba wewnętrzne kółka w komórce startowej są czarne, nie można stworzyć linii.")
                 return
 
             start_pos = ClickableCell.selected_green.scenePos() + ClickableCell.selected_green.rect().center()
             end_pos = self.scenePos() + self.rect().center()
             line_length = QLineF(start_pos, end_pos).length()
             cost = int(line_length // 50)
-            print(f"Koszt stworzenia linii: {cost}, długość linii: {line_length}")  # Debugowanie
+            game_view_instance.logger.log(f"Koszt stworzenia linii: {cost}, długość linii: {line_length}")
 
             if cost > ClickableCell.selected_green.value:
-                print("Koszt stworzenia linii przekracza wartość komórki, linia nie może zostać utworzona.")  # Debugowanie
+                game_view_instance.logger.log("Koszt stworzenia linii przekracza wartość komórki, linia nie może zostać utworzona.")
                 return
 
             ClickableCell.selected_green.setPen(QPen(Qt.black, 2))
@@ -437,7 +452,7 @@ class ClickableCell(QGraphicsEllipseItem):
                     circle.setBrush(QBrush(Qt.black))
                     break
 
-            ClickableCell.selected_green.clear_highlight()  # Clear highlights after creating a line
+            ClickableCell.selected_green.clear_highlight()  
             ClickableCell.selected_green = None
             ClickableCell.is_creating_line = False
 
@@ -445,29 +460,29 @@ class ClickableCell(QGraphicsEllipseItem):
 
     def hoverEnterEvent(self, event):
         if ClickableCell.moving_cell:
-            return  # Wyłącz pozostałą funkcjonalność, gdy tryb przesuwania jest włączony
+            return 
         if self.base_color == QColor("#66C676") and ClickableCell.is_creating_line:
             self.setPen(QPen(QColor("#A4DEFA"), 8, Qt.SolidLine))
         elif (self.base_color == Qt.gray or self.base_color == QColor("#D8177E")) and ClickableCell.selected_green:
             if all(circle.brush().color() == Qt.black for circle in ClickableCell.selected_green.inner_circles):
-                return  # Nie zmieniaj obwódki, jeśli oba kółka są czarne
+                return  
             self.setPen(QPen(QColor("#A4DEFA"), 8, Qt.SolidLine))
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):
         if ClickableCell.moving_cell:
-            return  # Wyłącz pozostałą funkcjonalność, gdy tryb przesuwania jest włączony
+            return  
         if self.base_color == QColor("#66C676") and ClickableCell.is_creating_line:
             self.setPen(QPen(Qt.black, 2))
         elif (self.base_color == Qt.gray or self.base_color == QColor("#D8177E")) and ClickableCell.selected_green:
             self.setPen(QPen(Qt.black, 2))
         if ClickableCell.is_creating_line and ClickableCell.selected_green == self:
-            self.clear_highlight()  # Clear highlights if the user cancels the action
+            self.clear_highlight() 
         super().hoverLeaveEvent(event)
 
     def contextMenuEvent(self, event):
         if ClickableCell.moving_cell:
-            return  # Wyłącz pozostałą funkcjonalność, gdy tryb przesuwania jest włączony
+            return 
         menu = QMenu()
         move_cell_action = menu.addAction("Przesuń komórkę")
         resize_cell_action = menu.addAction("Zmień rozmiar komórek")
@@ -477,11 +492,11 @@ class ClickableCell(QGraphicsEllipseItem):
             view = self.scene().views()[0]
             view.display_message("TRYB PRZESUWANIA KOMÓRKI (OBSŁUGA STRZAŁKAMI NA KLAWIATURZE)")
             if ClickableCell.moving_cell:
-                ClickableCell.moving_cell.setPen(QPen(Qt.black, 2))  # Usuń pomarańczową obwódkę z poprzedniej komórki
-            self.setPen(QPen(QColor("#FFA500"), 8, Qt.SolidLine))  # Pomarańczowa obwódka
-            ClickableCell.moving_cell = self  # Ustaw referencję do komórki w trybie przesuwania
+                ClickableCell.moving_cell.setPen(QPen(Qt.black, 2))  
+            self.setPen(QPen(QColor("#FFA500"), 8, Qt.SolidLine)) 
+            ClickableCell.moving_cell = self 
         elif action == resize_cell_action:
-            print("Zwiększ rozmiar komórki")
+            game_view_instance.logger.log("Zwiększ rozmiar komórki")
 
     def keyPressEvent(self, event):
         if ClickableCell.moving_cell:
@@ -508,17 +523,17 @@ class ClickableCell(QGraphicsEllipseItem):
                 if hasattr(ClickableCell.moving_cell, 'level_text'):
                     ClickableCell.moving_cell.level_text.moveBy(dx, dy)
                 
-                # Wyświetl globalne współrzędne komórki
                 global_pos = ClickableCell.moving_cell.scenePos() + ClickableCell.moving_cell.rect().center()
-                print(f"Przesunięto komórkę: global_pos={global_pos}")  # Debugowanie
-                self.scene().update_lines()  # Dodaj tę linię, aby zaktualizować linie
+                game_view_instance.logger.log(f"Przesunięto komórkę: global_pos={global_pos}")
+    
+                self.scene().update_lines() 
 
     def update_lines(self):
-            print("Aktualizacja linii w scenie...")  # Debugowanie
+            game_view_instance.logger.log("Aktualizacja linii w scenie...")
             for item in self.items():
                 if isinstance(item, ClickableLine):
-                    print(f"Znaleziono linię: {item}")  # Debugowanie
-                    item.update_position()  # Wywołaj update_position dla każdej linii
+                    game_view_instance.logger.log(f"Znaleziono linię: {item}")
+                    item.update_position() 
 
 class ExplosionEffect(QGraphicsEllipseItem):
     def __init__(self, x, y, color, parent=None):
@@ -536,7 +551,7 @@ class ExplosionEffect(QGraphicsEllipseItem):
         gradient.setColorAt(0.7, self.color)
         gradient.setColorAt(1, Qt.transparent)
         self.setBrush(QBrush(gradient))
-        self.setPen(QPen(Qt.NoPen))  # Fix: Use QPen(Qt.NoPen) instead of Qt.NoPen
+        self.setPen(QPen(Qt.NoPen)) 
         
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_effect)
@@ -563,67 +578,481 @@ class ExplosionEffect(QGraphicsEllipseItem):
 
 
 class GameScene(QGraphicsScene):
-    def __init__(self, parent=None):
+    def __init__(self, level=1, game_mode="1 gracz", parent=None):
         super().__init__(parent)
+        self.level = level  
+        self.game_mode = game_mode 
         self.setSceneRect(0, 0, 900, 900)
         self.init_background()
-        self.create_cells()
+        self.create_cells()  
+        ClickableCell.moving_cell = None
         self.line = None
         self.timer = QTimer()
         self.timer.timeout.connect(self.move_mini_cells)
-        self.timer.start(30)  # Timer co 100 ms
+        self.timer.start(30) 
         self.value_timer = QTimer()
         self.value_timer.timeout.connect(self.increase_cell_values)
-        self.value_timer.start(1000)  # Timer co 1000 ms (1 sekunda)
-        self.create_menu_button()  # Add this line to create the menu button
-        self.create_restart_button()  # Add this line to create the restart button
-        self.current_turn = "green"  # "green" lub "pink"
+        self.value_timer.start(1000)
+        self.create_menu_button() 
+        self.create_restart_button() 
+        self.create_history_buttons()
+        self.current_turn = "green"  
         self.turn_timer = QTimer()
-        self.turn_time_limit = 10  # sekund
+        self.turn_time_limit = 10  
         self.turn_remaining = self.turn_time_limit
 
         self.turn_timer.timeout.connect(self.update_turn_timer)
-        self.turn_timer.start(1000)  # Odliczanie co sekundę
+        self.turn_timer.start(1000) 
         self.create_turn_timer_display()
-        self.create_turn_display()  # Add this line to create the turn display
+        self.create_turn_display()  
+        self.replay_steps = []
+        self.replay_timer = QTimer()
+        self.replay_timer.timeout.connect(self.record_step)
+        self.replay_timer.start(1000)
+
+        self.create_save_button()
+
+
+    def create_cells(self):
+        """Create cells based on the selected level."""
+        self.cells = []
+        if self.level == 1:
+            self.create_level_1_cells()
+        elif self.level == 2:
+            self.create_level_2_cells()
+        elif self.level == 3:
+            self.create_level_3_cells()
+        elif self.level == 4:
+            self.create_level_4_cells()
+        elif self.level == 5:
+            self.create_level_5_cells()
+
+    def create_level_1_cells(self):
+        cell_positions = [
+            (250, 250, "#66C676", 10),  
+            (550, 550, "#D8177E", 20), 
+        ]
+        self.add_cells(cell_positions)
+
+    
+    def create_level_2_cells(self):
+        cell_positions = [
+            (150, 650, "#66C676", 20),  
+            (650, 150, "#D8177E", 20),  
+            (250, 250, QColor(Qt.gray), 0),  
+            (550, 550, QColor(Qt.gray), 0),  
+        ]
+        self.add_cells(cell_positions)
+
+    def record_step(self):
+        step = {"cells": [], "lines": []}
+        
+        for cell in self.cells:
+            cell_data = {
+                "x": int(cell.rect().x()),
+                "y": int(cell.rect().y()),
+                "value": cell.value,
+                "color": cell.base_color.name(),
+                "level": cell.level
+            }
+
+            if cell.inner_circles:
+                colors = [circle.brush().color().name() for circle in cell.inner_circles]
+                cell_data["circles"] = ",".join(colors)
+
+
+            if cell.base_color == Qt.gray and hasattr(cell, "_actual_top_value"):
+                cell_data["top_value"] = cell._actual_top_value
+            step["cells"].append(cell_data)
+            
+        
+        for item in self.items():
+            if isinstance(item, ClickableLine):
+                line_data = {
+                    "start_x": int(item.start_cell.rect().x()),
+                    "start_y": int(item.start_cell.rect().y()),
+                    "end_x": int(item.end_cell.rect().x()),
+                    "end_y": int(item.end_cell.rect().y()),
+                    "color": item.pen().color().name()
+                }
+                step["lines"].append(line_data)
+
+        step["turn"] = self.current_turn
+        step["timer"] = self.turn_remaining
+        
+        self.replay_steps.append(step)
+
+
+
+    def create_level_3_cells(self):
+        cell_positions = [
+            (100, 700, "#66C676", 15),
+            (700, 700, "#66C676", 15),
+            (700, 100, "#D8177E", 15),
+            (100, 100, "#D8177E", 15),
+            (300, 300, QColor(Qt.gray), 0),
+            (500, 500, QColor(Qt.gray), 0),
+            (400, 400, QColor(Qt.gray), 0),
+        ]
+        self.add_cells(cell_positions)
+
+    def create_level_4_cells(self):
+        cell_positions = [
+            (100, 500, "#66C676", 5),
+            (400, 500, "#66C676", 10),
+            (700, 500, "#66C676", 5),
+            (100, 300, "#D8177E", 5),
+            (400, 300, "#D8177E", 10),
+            (700, 300, "#D8177E", 5),
+            (250, 650, QColor(Qt.gray), 0),
+            (550, 650, QColor(Qt.gray), 0),
+            (250, 150, QColor(Qt.gray), 0),
+            (550, 150, QColor(Qt.gray), 0),
+        ]
+        self.add_cells(cell_positions)
+
+
+    def create_save_button(self):
+        save_button = HoverableRectItem(700, 70, 160, 30)
+        save_button.setBrush(QBrush(QColor(10, 10, 50)))
+        save_button.setPen(QPen(Qt.white, 2))
+        self.addItem(save_button)
+
+        save_text = QGraphicsTextItem("ZAKOŃCZ I ZAPISZ", save_button)
+        save_text.setFont(QFont("Arial", 10))
+        save_text.setDefaultTextColor(Qt.white)
+        save_text_rect = save_text.boundingRect()
+        save_text.setPos(
+            save_button.rect().center().x() - save_text_rect.width() / 2,
+            save_button.rect().center().y() - save_text_rect.height() / 2
+        )
+        save_button.mousePressEvent = self.save_and_exit_game
+
+    def save_and_exit_game(self, event):
+        save_current_game_to_xml(self)
+        QApplication.instance().quit()
+
+    def create_level_5_cells(self):
+        cell_positions = [
+            (350, 450, "#66C676", 10),
+            (450, 350, "#D8177E", 10),
+            (170, 630, QColor(Qt.gray), 0),
+            (630, 630, QColor(Qt.gray), 0),
+            (170, 170, QColor(Qt.gray), 0),
+            (630, 170, QColor(Qt.gray), 0),
+
+            (130, 400, QColor(Qt.gray), 0),
+            (400, 130, QColor(Qt.gray), 0),
+            (670, 400, QColor(Qt.gray), 0),
+            (400, 670, QColor(Qt.gray), 0),
+        ]
+        self.add_cells(cell_positions)
+
+    def create_history_buttons(self):
+        def create_button(x, y, label, callback):
+            button = HoverableRectItem(x, y, 120, 30)
+            button.setBrush(QBrush(QColor(10, 10, 50)))
+            button.setPen(QPen(Qt.white, 2))
+            self.addItem(button)
+
+            text = QGraphicsTextItem(label, button)
+            text.setFont(QFont("Arial", 6))
+            text.setDefaultTextColor(Qt.white)
+            text_rect = text.boundingRect()
+            text.setPos(
+                button.rect().center().x() - text_rect.width() / 2,
+                button.rect().center().y() - text_rect.height() / 2
+            )
+            button.mousePressEvent = callback
+
+        create_button(20, 20, "SAVE HISTORY [XML]", self.save_history_to_xml)
+        create_button(160, 20, "REPLAY [XML]", self.launch_replay)
+        create_button(20, 60, "SAVE HISTORY [JSON]", self.save_history_to_json)
+        create_button(160, 60, "REPLAY [JSON]", self.launch_json_replay)
+        create_button(20, 100, "SAVE HISTORY [MONGO]", self.save_history_to_mongo)
+        create_button(160, 100, "REPLAY [MONGO]", self.launch_mongo_replay)
+
+
+    def apply_step(self, step_data):
+        for cell_data in step_data["cells"]:
+            for cell in self.cells:
+                if int(cell.rect().x()) == cell_data["x"] and int(cell.rect().y()) == cell_data["y"]:
+                    cell.value = cell_data["value"]
+                    cell.level = cell_data["level"]
+                    cell.update_level_display()
+
+                    new_color = QColor(cell_data["color"])
+                    if cell.base_color != new_color:
+                        cell.base_color = new_color
+                        cell.set_gradient()
+
+                    if cell.base_color != Qt.gray:
+                        if hasattr(cell, 'top_text'):
+                            self.removeItem(cell.top_text)
+                            del cell.top_text
+                        if hasattr(cell, 'bottom_text'):
+                            self.removeItem(cell.bottom_text)
+                            del cell.bottom_text
+
+                        if cell.value_text:
+                            cell.value_text.setPlainText(str(cell.value))
+                        else:
+                            text_item = QGraphicsTextItem(str(cell.value))
+                            text_item.setFont(QFont("Arial", 14, QFont.Bold))
+                            text_item.setDefaultTextColor(Qt.white)
+                            text_rect = text_item.boundingRect()
+                            text_item.setPos(
+                                cell.rect().x() + 50 - text_rect.width() / 2,
+                                cell.rect().y() + 50 - text_rect.height() / 2
+                            )
+                            self.addItem(text_item)
+                            cell.set_value_text(text_item)
+
+                        if not hasattr(cell, 'level_text'):
+                            level_text = QGraphicsTextItem(f"LVL {cell.level}")
+                            level_text.setFont(QFont("Arial", 10))
+                            level_text.setDefaultTextColor(Qt.white)
+                            level_text_rect = level_text.boundingRect()
+                            level_text.setPos(
+                                cell.rect().x() + 50 - level_text_rect.width() / 2,
+                                cell.rect().y() + 100
+                            )
+                            self.addItem(level_text)
+                            cell.set_level_text(level_text)
+
+
+                        circle_colors = ["#ffffff", "#ffffff"]
+                        if "circles" in cell_data:
+                            circle_colors = cell_data["circles"].split(",")
+
+                        for i, (dx, dy) in enumerate([(-20, -20), (20, 20)]):
+                            color = QColor(circle_colors[i]) if i < len(circle_colors) else Qt.white
+                            if i < len(cell.inner_circles):
+                                cell.inner_circles[i].setBrush(QBrush(color))
+                            else:
+                                inner_circle = QGraphicsEllipseItem(
+                                    cell.rect().x() + 50 + dx - 10,
+                                    cell.rect().y() + 50 + dy - 10,
+                                    20, 20
+                                )
+                                inner_circle.setBrush(QBrush(color))
+                                inner_circle.setPen(QPen(Qt.black, 1))
+                                inner_circle.setZValue(1)
+                                self.addItem(inner_circle)
+                                cell.inner_circles.append(inner_circle)
+
+
+                    else:
+                        if "top_value" in cell_data:
+                            cell._actual_top_value = cell_data["top_value"]
+                            if hasattr(cell, "top_text"):
+                                cell.top_text.setPlainText(str(abs(cell._actual_top_value)))
+
+        for item in self.items():
+            if isinstance(item, ClickableLine):
+                self.removeItem(item)
+
+        for line_data in step_data.get("lines", []):
+            start = next((c for c in self.cells if int(c.rect().x()) == line_data["start_x"] and int(c.rect().y()) == line_data["start_y"]), None)
+            end = next((c for c in self.cells if int(c.rect().x()) == line_data["end_x"] and int(c.rect().y()) == line_data["end_y"]), None)
+            if start and end:
+                line = ClickableLine(QLineF(
+                    start.scenePos() + start.rect().center(),
+                    end.scenePos() + end.rect().center()
+                ), start, end)
+                line.setPen(QPen(QColor(line_data["color"]), 8))
+                self.addItem(line)
+
+        self.current_turn = step_data.get("turn", "green")
+        self.turn_remaining = step_data.get("timer", 10)
+        self.turn_display.setPlainText(f"Turn: {self.current_turn.capitalize()}")
+        self.turn_timer_display.setPlainText(f"Timer: {self.turn_remaining}s")
+
+
+
+
+    def save_history_to_xml(self, event=None):
+        root = ET.Element("game")
+        root.set("level", str(self.level))
+        root.set("mode", self.game_mode) 
+
+        for step_num, step in enumerate(self.replay_steps):
+            step_el = ET.SubElement(root, "step", {
+                "time": str(step_num),
+                "turn": step["turn"],
+                "timer": str(step["timer"])
+            })
+
+
+            for cell_data in step["cells"]:
+                cell_el = ET.SubElement(step_el, "cell", {
+                    "x": str(cell_data["x"]),
+                    "y": str(cell_data["y"]),
+                    "value": str(cell_data["value"]),
+                    "color": cell_data["color"],
+                    "level": str(cell_data["level"])
+                })
+
+                if "top_value" in cell_data:
+                    cell_el.set("top_value", str(cell_data["top_value"]))
+
+                if "circles" in cell_data:
+                    cell_el.set("circles", cell_data["circles"])
+
+                for line_data in step["lines"]:
+                    ET.SubElement(step_el, "line", {
+                        "start_x": str(line_data["start_x"]),
+                        "start_y": str(line_data["start_y"]),
+                        "end_x": str(line_data["end_x"]),
+                        "end_y": str(line_data["end_y"]),
+                        "color": line_data["color"]  
+                    })
+
+
+
+        tree = ET.ElementTree(root)
+        tree.write("history.xml")
+        game_view_instance.logger.log("Zapisano pełną historię do history.xml")
+
+    def save_history_to_json(self, event=None):
+        json_data = {
+            "level": self.level,
+            "mode": self.game_mode, 
+            "steps": self.replay_steps
+        }
+
+        with open("history.json", "w") as f:
+            json.dump(json_data, f, indent=4)
+
+        game_view_instance.logger.log("Zapisano historię do history.json")
+
+    def save_history_to_mongo(self, event=None):
+        from pymongo import MongoClient
+        client = MongoClient("mongodb://localhost:27017/")
+        db = client["game_db"]
+        collection = db["full_game_history"]
+
+        document = {
+            "level": self.level,
+            "mode": self.game_mode, 
+            "steps": self.replay_steps
+        }
+
+        collection.insert_one(document)
+        game_view_instance.logger.log("✅ Zapisano historię do MongoDB (pełna gra).")
+
+    def launch_mongo_replay(self, event=None):
+        import subprocess
+        subprocess.Popen([sys.executable, "replay_view_mongo.py"])
+
+
+
+    def launch_replay(self, event=None):
+        if not os.path.exists("history.xml"):
+            game_view_instance.logger.log("Brak pliku history.xml – najpierw zapisz poziom.")
+            return
+        subprocess.Popen([sys.executable, "replay_view.py"])
+
+    def launch_json_replay(self, event=None):
+        if not os.path.exists("history.json"):
+            game_view_instance.logger.log("Brak pliku history.json – najpierw zapisz historię.")
+            return
+        subprocess.Popen([sys.executable, "replay_view_json.py"])
+
+
+
+    def add_cells(self, cell_positions):
+        for x, y, color, value in cell_positions:
+            cell_rect = QRectF(x, y, 100, 100)
+            cell = ClickableCell(cell_rect, color, value)
+            self.cells.append(cell)
+            if color == QColor(Qt.gray):
+                self.addItem(cell)
+            else:
+                text_item = QGraphicsTextItem(str(value))
+                text_item.setFont(QFont("Arial", 14, QFont.Bold))
+                text_item.setDefaultTextColor(Qt.white)
+                text_rect = text_item.boundingRect()
+                text_item.setPos(
+                    x + 50 - text_rect.width() / 2,
+                    y + 50 - text_rect.height() / 2
+                )
+                self.addItem(cell)
+                self.addItem(text_item)
+                cell.set_value_text(text_item)
+                for dx, dy in [(-20, -20), (20, 20)]:
+                    inner_circle = QGraphicsEllipseItem(x + 50 + dx - 10, y + 50 + dy - 10, 20, 20)
+                    inner_circle.setBrush(QBrush(Qt.white))
+                    inner_circle.setPen(QPen(Qt.black, 1))
+                    inner_circle.setZValue(1)
+                    self.addItem(inner_circle)
+                    cell.inner_circles.append(inner_circle)
+                level_text = QGraphicsTextItem("LVL 1")
+                level_text.setFont(QFont("Arial", 10))
+                level_text.setDefaultTextColor(Qt.white)
+                level_text_rect = level_text.boundingRect()
+                level_text.setPos(
+                    x + 50 - level_text_rect.width() / 2,
+                    y + 100
+                )
+                self.addItem(level_text)
+                cell.set_level_text(level_text)
+            if color == QColor(Qt.gray):
+                top_text = QGraphicsTextItem("0")
+                top_text.setFont(QFont("Arial", 14, QFont.Bold))
+                top_text.setDefaultTextColor(Qt.white)
+                top_text_rect = top_text.boundingRect()
+                top_text.setPos(
+                    x + 50 - top_text_rect.width() / 2,
+                    y + 10
+                )
+                self.addItem(top_text)
+                cell.set_top_text(top_text)
+                bottom_text = QGraphicsTextItem("8")
+                bottom_text.setFont(QFont("Arial", 14, QFont.Bold))
+                bottom_text.setDefaultTextColor(Qt.white)
+                bottom_text_rect = bottom_text.boundingRect()
+                bottom_text.setPos(
+                    x + 50 - bottom_text_rect.width() / 2,
+                    y + 55
+                )
+                self.addItem(bottom_text)
+                cell.bottom_text = bottom_text
 
     def create_turn_timer_display(self):
-        """Create a display for the remaining time in the current round."""
         self.turn_timer_display = QGraphicsTextItem(f"Timer: {self.turn_remaining}s")
         self.turn_timer_display.setFont(QFont("Arial", 14, QFont.Bold))
         self.turn_timer_display.setDefaultTextColor(Qt.white)
-        self.turn_timer_display.setPos(600, 50)  # Position the timer display
+        self.turn_timer_display.setPos(600, 50)  
         self.addItem(self.turn_timer_display)
 
     def create_turn_display(self):
-        """Create a display for the current player's turn."""
         self.turn_display = QGraphicsTextItem(f"Turn: {self.current_turn.capitalize()}")
         self.turn_display.setFont(QFont("Arial", 16, QFont.Bold))
         self.turn_display.setDefaultTextColor(Qt.white)
-        self.turn_display.setPos(600, 20)  # Position the turn display above the timer
+        self.turn_display.setPos(600, 20)  
         self.addItem(self.turn_display)
 
     def update_turn_timer(self):
-        """Update the timer display and handle turn switching."""
         self.turn_remaining -= 1
         if self.turn_remaining <= 0:
             self.switch_turn()
         self.turn_timer_display.setPlainText(f"Timer: {self.turn_remaining}s")
 
     def switch_turn(self):
-        """Switch the turn and reset the timer."""
         self.current_turn = "pink" if self.current_turn == "green" else "green"
         self.turn_remaining = self.turn_time_limit
         self.turn_timer_display.setPlainText(f"Pozostały czas: {self.turn_remaining}s")
-        self.turn_display.setPlainText(f"Turn: {self.current_turn.capitalize()}")  # Update the turn display
+        self.turn_display.setPlainText(f"Turn: {self.current_turn.capitalize()}") 
         ClickableCell.selected_green = None
         ClickableCell.is_creating_line = False
 
-        # Clear suggestion label
-        view = self.views()[0]
-        view.suggestion_label.hide()
+        game_view_instance.logger.log(f"Switching turn to {self.current_turn}")
 
-        # Remove "Attacker" and "Target" labels
+        if self.views(): 
+            view = self.views()[0]
+            view.suggestion_label.hide()
+
         for item in self.items():
             if isinstance(item, QGraphicsTextItem) and item.data(0) == "suggestion_label":
                 self.removeItem(item)
@@ -638,11 +1067,11 @@ class GameScene(QGraphicsScene):
         self.setBackgroundBrush(QBrush(gradient))
 
     def update_lines(self):
-            print("Aktualizacja linii w scenie...")  # Debugowanie
+            game_view_instance.logger.log("Aktualizacja linii w scenie...")
             for item in self.items():
                 if isinstance(item, ClickableLine):
-                    print(f"Znaleziono linię: {item}")  # Debugowanie
-                    item.update_position()  # Wywołaj update_position dla każdej linii
+                    game_view_instance.logger.log(f"Znaleziono linię: {item}")
+                    item.update_position() 
 
     def get_attacker(self, target_cell):
         for item in self.items():
@@ -650,104 +1079,20 @@ class GameScene(QGraphicsScene):
                 return item.start_cell
         return None
     
-    def create_cells(self):
-        self.cells = []
-        cell_positions = [
-            (150, 650, "#66C676", 20),  # Zielona komórka
-            (350, 650, "#66C676", 20),  # Zielona komórka
-            (650, 150, "#D8177E", 20),  # Różowa komórka
-            (450, 150, "#D8177E", 20),  # Różowa komórka
-            (250, 250, QColor(Qt.gray), 0),  # Szara komórka (wartość 0, ale nie używana)
-            (550, 550, QColor(Qt.gray), 0),  # Szara komórka (wartość 0, ale nie używana)
-        ]
-        
-        for x, y, color, value in cell_positions:
-            cell_rect = QRectF(x, y, 100, 100)
-            cell = ClickableCell(cell_rect, color, value)
-            self.cells.append(cell)
-            
-            # Dodanie szarej komórki przed napisami
-            if (color == QColor(Qt.gray)):
-                self.addItem(cell)
-            
-            # Dodanie tekstu do komórki (jeśli nie jest szara)
-            if color != QColor(Qt.gray):
-                text_item = QGraphicsTextItem(str(value))
-                text_item.setFont(QFont("Arial", 14, QFont.Bold))
-                text_item.setDefaultTextColor(Qt.white)
-                text_rect = text_item.boundingRect()
-                text_item.setPos(
-                    x + 50 - text_rect.width() / 2,
-                    y + 50 - text_rect.height() / 2
-                )
-                self.addItem(cell)
-                self.addItem(text_item)
-                cell.set_value_text(text_item)
-            
-            # Dodanie dwóch małych kółek na komórce, jeśli nie jest szara
-            if color != QColor(Qt.gray):
-                for dx, dy in [(-20, -20), (20, 20)]:
-                    inner_circle = QGraphicsEllipseItem(x + 50 + dx - 10, y + 50 + dy - 10, 20, 20)
-                    inner_circle.setBrush(QBrush(Qt.white))
-                    inner_circle.setPen(QPen(Qt.black, 1))
-                    inner_circle.setZValue(1)  # Kółka są na wierzchu komórek
-                    self.addItem(inner_circle)
-                    cell.inner_circles.append(inner_circle)
-
-            if color != QColor(Qt.gray):
-                level_text = QGraphicsTextItem("LVL 1")
-                level_text.setFont(QFont("Arial", 10))
-                level_text.setDefaultTextColor(Qt.white)
-                level_text_rect = level_text.boundingRect()
-                level_text.setPos(
-                    x + 50 - level_text_rect.width() / 2,
-                    y + 100  # poniżej komórki (adjusted to be lower)
-                )
-                self.addItem(level_text)
-                cell.set_level_text(level_text)  # Set reference to level text  
-            
-            # Dodanie dwóch liczb na szarej komórce (0 u góry i 8 na dole)
-            if color == QColor(Qt.gray):
-                # Liczba u góry (0)
-                top_text = QGraphicsTextItem("0")
-                top_text.setFont(QFont("Arial", 14, QFont.Bold))
-                top_text.setDefaultTextColor(Qt.white)
-                top_text_rect = top_text.boundingRect()
-                top_text.setPos(
-                    x + 50 - top_text_rect.width() / 2,  # Wyśrodkowanie poziome
-                    y + 10  # U góry komórki
-                )
-                self.addItem(top_text)
-                cell.set_top_text(top_text)  # Set reference to top text
-                
-                # Liczba na dole (8)
-                bottom_text = QGraphicsTextItem("8")
-                bottom_text.setFont(QFont("Arial", 14, QFont.Bold))
-                bottom_text.setDefaultTextColor(Qt.white)
-                bottom_text_rect = bottom_text.boundingRect()
-                bottom_text.setPos(
-                    x + 50 - bottom_text_rect.width() / 2,  # Wyśrodkowanie poziome
-                    y + 55  # Na dole komórki
-                )
-                self.addItem(bottom_text)
-                cell.bottom_text = bottom_text  # Set reference to bottom text
-        
-    
     def mouseMoveEvent(self, event):
         if ClickableCell.moving_cell:
-            return  # Wyłącz pozostałą funkcjonalność, gdy tryb przesuwania jest włączony
+            return 
         if ClickableCell.selected_green and ClickableCell.is_creating_line:
             if all(circle.brush().color() == Qt.black for circle in ClickableCell.selected_green.inner_circles):
-                return  # Nie twórz linii, jeśli oba kółka są czarne
+                return 
             
             if not self.line:
                 self.line = QGraphicsLineItem()
                 color = "#D8177E" if ClickableCell.selected_green.base_color == QColor("#D8177E") else "#66C676"
                 self.line.setPen(QPen(QColor(color), 8))
                 self.addItem(self.line)
-                self.line.setZValue(-1)  # Linia jest pod komórkami
+                self.line.setZValue(-1) 
             
-            # Użyj globalnych współrzędnych
             start_point = ClickableCell.selected_green.scenePos() + ClickableCell.selected_green.rect().center()
             end_point = event.scenePos()
             self.line.setLine(QLineF(start_point, end_point)) 
@@ -755,7 +1100,7 @@ class GameScene(QGraphicsScene):
     
     def mouseReleaseEvent(self, event):
         if ClickableCell.moving_cell:
-            return  # Wyłącz pozostałą funkcjonalność, gdy tryb przesuwania jest włączony
+            return 
         if self.line:
             self.removeItem(self.line)
             self.line = None
@@ -765,18 +1110,18 @@ class GameScene(QGraphicsScene):
         if ClickableCell.moving_cell:
             item = self.itemAt(event.scenePos(), QTransform())
             if isinstance(item, ClickableCell):
-                ClickableCell.moving_cell.setPen(QPen(Qt.black, 2))  # Usuń pomarańczową obwódkę z poprzedniej komórki
-                item.setPen(QPen(QColor("#FFA500"), 8, Qt.SolidLine))  # Pomarańczowa obwódka
-                ClickableCell.moving_cell = item  # Ustaw nową referencję do komórki w trybie przesuwania
-            return  # Wyłącz pozostałą funkcjonalność, gdy tryb przesuwania jest włączony
+                ClickableCell.moving_cell.setPen(QPen(Qt.black, 2))  
+                item.setPen(QPen(QColor("#FFA500"), 8, Qt.SolidLine))  
+                ClickableCell.moving_cell = item 
+            return  
         item = self.itemAt(event.scenePos(), QTransform())
         if isinstance(item, ClickableLine):
             item.mousePressEvent(event)
         elif not isinstance(item, ClickableCell) and ClickableCell.selected_green:
-            ClickableCell.selected_green.clear_highlight()  # Clear highlights when canceling line creation
-            ClickableCell.selected_green.setPen(QPen(Qt.black, 2))  # Usunięcie obwódki z zielonego
-            ClickableCell.selected_green = None  # Reset wyboru zielonego
-            ClickableCell.is_creating_line = False  # Zakończ tworzenie linii
+            ClickableCell.selected_green.clear_highlight() 
+            ClickableCell.selected_green.setPen(QPen(Qt.black, 2)) 
+            ClickableCell.selected_green = None 
+            ClickableCell.is_creating_line = False  
             if self.line:
                 self.removeItem(self.line)
                 self.line = None
@@ -786,7 +1131,6 @@ class GameScene(QGraphicsScene):
         for item in self.items():
             if isinstance(item, ClickableLine):
                 if not item.mini_cells:
-                    # Utwórz nowe mini kółko
                     color = "#7D1B4F" if item.start_cell.base_color == QColor("#D8177E") else "#186527"
                     mini_cell = QGraphicsEllipseItem(-5, -5, 10, 10, item)
                     mini_cell.setBrush(QBrush(QColor(color)))
@@ -799,48 +1143,62 @@ class GameScene(QGraphicsScene):
                     current_pos = mini_cell.pos()
                     end_pos = item.line().p2()
                     direction = end_pos - current_pos
-                    step = direction / 10  # krok ruchu
+                    step = direction / 10  
                     mini_cell.setPos(current_pos + step)
 
                     if (current_pos - end_pos).manhattanLength() < 5:
                         self.removeItem(mini_cell)
                         item.mini_cells.remove(mini_cell)
 
-                        # Po trafieniu w komórkę
-                        attacker = item.start_cell  # Define the attacker here
+                        attacker = item.start_cell
                         explosion = ExplosionEffect(end_pos.x(), end_pos.y(), attacker.base_color)
                         self.addItem(explosion)
 
                         for cell in self.cells:
                             if cell.rect().contains(end_pos):
-                                attacker = item.start_cell
                                 if cell.base_color == Qt.gray:
                                     if attacker.base_color == QColor("#66C676"):
                                         cell.update_top_text(1)
                                     elif attacker.base_color == QColor("#D8177E"):
                                         cell.update_top_text(-1)
-
                                 elif cell.base_color != attacker.base_color:
-    # WROGA KOMÓRKA – zastosuj siłę ataku
                                     damage = attacker.get_attack_power_per_mini_cell()
-                                    print(f"Mini-komórka z poziomem {attacker.level} atakuje! Obrażenia: {damage}")  # DEBUG
-                                    cell.update_value(-damage)
+                                    game_view_instance.logger.log(f"Mini-komórka z poziomem {attacker.level} atakuje! Obrażenia: {damage}")
+                                    cell.update_value(-damage, caused_by_enemy=True)
                                 elif cell.base_color == attacker.base_color:
-                                    # PRZYJACIELSKA KOMÓRKA – dodaj 1 wartość
                                     cell.update_value(1)
 
-                                break  # znaleziono cel, nie szukamy dalej
+                                break  
 
-                        # Zmniejsz wartość atakującej komórki (zawsze o 1)
-                        item.start_cell.update_value(-1)
+                        item.start_cell.update_value(-1, caused_by_enemy=False)
 
+        self.check_winner()
 
     def increase_cell_values(self):
         for cell in self.cells:
-            if cell.base_color == QColor("#66C676"):  # Zielona komórka
+            if cell.base_color == QColor("#66C676"): 
                 cell.update_value(1)
-            elif cell.base_color == QColor("#D8177E"):  # Różowa komórka
+            elif cell.base_color == QColor("#D8177E"):  
                 cell.update_value(1)
+
+        self.check_winner()
+
+    def check_winner(self):
+        green_cells = all(cell.base_color == QColor("#66C676") for cell in self.cells)
+        pink_cells = all(cell.base_color == QColor("#D8177E") for cell in self.cells)
+
+        if green_cells:
+            self.declare_winner("ZWYCIĘSTWO ZIELONYCH")
+        elif pink_cells:
+            self.declare_winner("ZWYCIĘSTWO RÓŻOWYCH")
+
+    def declare_winner(self, message):
+        if not hasattr(self, 'winner_label'):
+            self.winner_label = QGraphicsTextItem(message)
+            self.winner_label.setFont(QFont("Arial", 30, QFont.Bold))
+            self.winner_label.setDefaultTextColor(Qt.white)
+            self.winner_label.setPos(450 - self.winner_label.boundingRect().width() / 2, 400)
+            self.addItem(self.winner_label)
 
     def contextMenuEvent(self, event):
         item = self.itemAt(event.scenePos(), QTransform())
@@ -913,31 +1271,41 @@ class GameScene(QGraphicsScene):
 
     def restart_game(self, event):
         view = self.views()[0]
-        view.suggestion_label.hide()  # Hide the suggestion label
-        self.clear()  # Clear the scene
-        self.init_background()  # Reinitialize the background
-        self.create_cells()  # Recreate the cells
-        self.create_menu_button()  # Recreate the menu button
-        self.create_restart_button()  # Recreate the restart button
-        self.create_turn_timer_display()  # Recreate the turn timer display
-        self.create_turn_display()  # Recreate the turn display
-        self.timer.start(30)  # Restart the mini cell movement timer
-        self.value_timer.start(1000)  # Restart the cell value increase timer
-        self.turn_remaining = self.turn_time_limit  # Reset the turn timer
-        self.current_turn = "green"  # Reset the turn to green
-        self.turn_timer.start(1000)  # Restart the turn timer
+        view.suggestion_label.hide()  
+        self.clear()  
+        self.init_background()  
+        self.create_cells() 
+        self.create_menu_button() 
+        self.create_restart_button()
+        self.create_turn_timer_display() 
+        self.create_turn_display()  
+        self.timer.start(30)  
+        self.value_timer.start(1000)  
+        self.turn_remaining = self.turn_time_limit 
+        self.current_turn = "green"  
+        self.turn_timer.start(1000)  
+
+        ClickableCell.moving_cell = None
+
+        if hasattr(self, 'winner_label'):
+            self.removeItem(self.winner_label)
+            del self.winner_label
 
     def back_to_main_menu(self, event):
         view = self.views()[0]
-        view.suggestion_label.hide()  # Hide the suggestion label
+        view.suggestion_label.hide()  
         view.setScene(MainMenuScene())
 
+        ClickableCell.moving_cell = None
+
+        if hasattr(self, 'winner_label'):
+            self.removeItem(self.winner_label)
+            del self.winner_label
+
     def suggest_best_move(self):
-        """Provide a basic AI suggestion for the best move."""
         best_move = None
         max_value_difference = -float('inf')
 
-        # Clear previous suggestion labels
         for item in self.items():
             if isinstance(item, QGraphicsTextItem) and item.data(0) == "suggestion_label":
                 self.removeItem(item)
@@ -962,24 +1330,23 @@ class GameScene(QGraphicsScene):
             source, target = best_move
             suggestion = f"Attack from cell at ({source.rect().x()}, {source.rect().y()}) to cell at ({target.rect().x()}, {target.rect().y()})."
 
-            # Add "Attacker" label above the source cell
             attacker_label = QGraphicsTextItem("Attacker")
             attacker_label.setFont(QFont("Arial", 12, QFont.Bold))
             attacker_label.setDefaultTextColor(Qt.green if self.current_turn == "green" else Qt.red)
             attacker_label.setPos(source.rect().x() + 50 - attacker_label.boundingRect().width() / 2, source.rect().y() - 20)
-            attacker_label.setData(0, "suggestion_label")  # Mark as suggestion label
+            attacker_label.setData(0, "suggestion_label") 
             self.addItem(attacker_label)
 
-            # Add "Target" label above the target cell
             target_label = QGraphicsTextItem("Target")
             target_label.setFont(QFont("Arial", 12, QFont.Bold))
             target_label.setDefaultTextColor(Qt.green if self.current_turn == "green" else Qt.red)
             target_label.setPos(target.rect().x() + 50 - target_label.boundingRect().width() / 2, target.rect().y() - 20)
-            target_label.setData(0, "suggestion_label")  # Mark as suggestion label
+            target_label.setData(0, "suggestion_label")  
             self.addItem(target_label)
         else:
             suggestion = "No valid moves available."
 
+        game_view_instance.logger.log(suggestion)
         view = self.views()[0]
         view.display_suggestion(suggestion)
 
@@ -1039,8 +1406,23 @@ class LevelSelectionScene(QGraphicsScene):
         back_button.mousePressEvent = self.back_to_main_menu
 
     def start_game(self, event, level):
-        view = self.views()[0]
-        view.setScene(GameScene())
+        dialog = ConfigDialog()
+        if dialog.exec_() == QDialog.Accepted:
+            selected_mode = dialog.get_selected_mode()
+            ip, port = dialog.get_ip_port()
+            print(f"Wybrany tryb gry: {selected_mode}")
+
+            if selected_mode == "Gra sieciowa":
+                if ip == "server":
+                    server = NetworkServer(port=port)
+                    server.start()
+                else:
+                    client = NetworkClient(ip=ip, port=port)
+                    client.connect()
+                    client.send("Gracz dołączył!")
+
+            view = self.views()[0]
+            view.setScene(GameScene(level=int(level.split()[-1]), game_mode=selected_mode)) 
 
     def back_to_main_menu(self, event):
         view = self.views()[0]
@@ -1095,23 +1477,56 @@ class MainMenuScene(QGraphicsScene):
             level_button.rect().center().y() - level_text_rect.height() / 2
         )
 
+        exit_button = HoverableRectItem(250, 600, 400, 100) 
+        exit_button.setBrush(QBrush(QColor(10, 10, 50)))
+        exit_button.setPen(QPen(Qt.white, 2))
+        self.addItem(exit_button)
+
+        exit_text = QGraphicsTextItem("ZAKOŃCZ", exit_button)
+        exit_text.setFont(QFont("Arial", 20, QFont.Bold))
+        exit_text.setDefaultTextColor(Qt.white)
+        exit_text_rect = exit_text.boundingRect()
+        exit_text.setPos(
+            exit_button.rect().center().x() - exit_text_rect.width() / 2,
+            exit_button.rect().center().y() - exit_text_rect.height() / 2
+        )
+
         play_button.mousePressEvent = self.start_game
         level_button.mousePressEvent = self.show_level_selection
+        exit_button.mousePressEvent = self.exit_game 
 
     def start_game(self, event):
-        view = self.views()[0]
-        view.setScene(GameScene())
+        dialog = ConfigDialog()
+        if dialog.exec_() == QDialog.Accepted:
+            selected_mode = dialog.get_selected_mode()
+            ip, port = dialog.get_ip_port()
+            print(f"Wybrany tryb gry: {selected_mode}")
+
+            if selected_mode == "Gra sieciowa":
+                if ip == "server":
+                    server = NetworkServer(port=port)
+                    server.start()
+                else:
+                    client = NetworkClient(ip=ip, port=port)
+                    client.connect()
+                    client.send("Gracz dołączył!")
+
+            view = self.views()[0]
+            view.setScene(GameScene(game_mode=selected_mode)) 
 
     def show_level_selection(self, event):
         view = self.views()[0]
         view.setScene(LevelSelectionScene())
+
+    def exit_game(self, event):
+        QApplication.instance().quit() 
 
 class HoverableRectItem(QGraphicsRectItem):
     def __init__(self, x, y, width, height, parent=None):
         super().__init__(x, y, width, height, parent)
         self.default_brush = QBrush(QColor(10, 10, 50))
         self.setBrush(self.default_brush)
-        self.setAcceptHoverEvents(True)  # Enable hover events
+        self.setAcceptHoverEvents(True) 
 
     def hoverEnterEvent(self, event):
         self.setBrush(QBrush(QColor("#001E5A")))
@@ -1124,44 +1539,53 @@ class HoverableRectItem(QGraphicsRectItem):
 class GameView(QGraphicsView):
     def __init__(self):
         super().__init__()
-        self.suggestion_button = QPushButton("PODPOWIEDŹ", self)  # Initialize suggestion button first
-        self.suggestion_button.setGeometry(400, 830, 100, 40)  # Position and size of the button
+        global game_view_instance
+        game_view_instance = self 
+        self.suggestion_button = QPushButton("PODPOWIEDŹ", self)  
+        self.suggestion_button.setGeometry(400, 780, 100, 40) 
         self.suggestion_button.setFont(QFont("Arial", 9, QFont.Bold))
         self.suggestion_button.setStyleSheet("background-color: rgb(10, 10, 50); color: white;")
         self.suggestion_button.clicked.connect(self.request_suggestion)
-        self.suggestion_button.hide()  # Initially hide the button
+        self.suggestion_button.hide()  
 
-        self.setScene(MainMenuScene())  # Call setScene after initializing suggestion_button
+        self.logger_widget = QTextEdit(self)
+        self.logger_widget.setGeometry(40, 830, 820, 60)
+        self.logger_widget.setReadOnly(True)
+        self.logger_widget.setStyleSheet("background-color: rgb(10, 10, 50); color: white;")
+        self.logger_widget.hide()
+
+        self.logger = Logger(self.logger_widget)
+
+        self.setScene(MainMenuScene()) 
         self.setRenderHint(QPainter.Antialiasing)
         self.setFixedSize(900, 900)
         self.message_label = QGraphicsTextItem("")
         self.message_label.setFont(QFont("Arial", 10, QFont.Bold))
         self.message_label.setDefaultTextColor(Qt.white)
-        self.message_label.setPos(150, 20)  # Position at the top center
+        self.message_label.setPos(150, 20) 
         self.scene().addItem(self.message_label)
         
-        # Create a QLabel for the moving mode message
         self.moving_mode_label = QLabel("Tryb przesuwania komórek. Obsługa strzałkami na klawiaturze. Kliknij \"ZAKOŃCZ\", aby wyjść z trybu.", self)
         self.moving_mode_label.setStyleSheet("color: white; background-color: rgba(10, 10, 50, 200); padding: 5px;")
         self.moving_mode_label.setFont(QFont("Arial", 10, QFont.Bold))
-        self.moving_mode_label.setGeometry(40, 760, 820, 30)  # Position above the "ZAKOŃCZ" button
+        self.moving_mode_label.setGeometry(40, 760, 820, 30)  
         self.moving_mode_label.setAlignment(Qt.AlignCenter)
-        self.moving_mode_label.hide()  # Initially hide the label
+        self.moving_mode_label.hide()  
 
         self.end_button = QPushButton("ZAKOŃCZ", self)
-        self.end_button.setGeometry(400, 800, 100, 40)  # Position and size of the button
+        self.end_button.setGeometry(400, 800, 100, 40)  
         font = self.end_button.font()
-        font.setBold(True)  # Pogrubienie czcionki
-        font.setPointSize(9)  # Zwiększenie rozmiaru czcionki
+        font.setBold(True)  
+        font.setPointSize(9) 
         self.end_button.setFont(font)
-        self.end_button.setStyleSheet("background-color: rgb(10, 10, 50); color: white;")  # Kolor tła i tekstu przycisku
+        self.end_button.setStyleSheet("background-color: rgb(10, 10, 50); color: white;") 
         self.end_button.clicked.connect(self.hide_message)
-        self.end_button.hide()  # Initially hide the button
+        self.end_button.hide()  
 
         self.suggestion_label = QLabel("", self)
         self.suggestion_label.setStyleSheet("color: white; background-color: rgba(10, 10, 50, 200); padding: 5px;")
         self.suggestion_label.setFont(QFont("Arial", 10, QFont.Bold))
-        self.suggestion_label.setGeometry(40, 790, 820, 30)  # Lowered by 100 pixels
+        self.suggestion_label.setGeometry(40, 790, 820, 30) 
         self.suggestion_label.setAlignment(Qt.AlignCenter)
         self.suggestion_label.hide()
 
@@ -1169,32 +1593,38 @@ class GameView(QGraphicsView):
 
     def setScene(self, scene):
         super().setScene(scene)
-        # Show or hide the suggestion button based on the scene type
+        self.message_label = QGraphicsTextItem("")
+        self.message_label.setFont(QFont("Arial", 10, QFont.Bold))
+        self.message_label.setDefaultTextColor(Qt.white)
+        self.message_label.setPos(150, 20) 
+        self.scene().addItem(self.message_label)
+
         if isinstance(scene, GameScene):
             self.suggestion_button.show()
+            self.logger_widget.show()
         else:
             self.suggestion_button.hide()
+            self.logger_widget.hide()
 
     def display_message(self, message):
         self.message_label.setPlainText(message)
-        self.end_button.show()  # Show the button when displaying the message
-        self.moving_mode_label.show()  # Show the moving mode label
+        self.end_button.show()
+        self.moving_mode_label.show() 
 
     def hide_message(self):
-        self.message_label.setPlainText("")
-        self.end_button.hide()  # Hide the button when the message is hidden
-        self.moving_mode_label.hide()  # Hide the moving mode label
+        if hasattr(self, "message_label") and self.message_label.scene():
+            self.message_label.setPlainText("") 
+        self.end_button.hide()  
+        self.moving_mode_label.hide()  
         if ClickableCell.moving_cell:
-            ClickableCell.moving_cell.setPen(QPen(Qt.black, 2))  # Usuń pomarańczową obwódkę
-            ClickableCell.moving_cell = None  # Reset komórki w trybie przesuwania
+            ClickableCell.moving_cell.setPen(QPen(Qt.black, 2)) 
+            ClickableCell.moving_cell = None 
 
     def display_suggestion(self, suggestion):
-        """Display the AI suggestion."""
         self.suggestion_label.setText(suggestion)
         self.suggestion_label.show()
 
     def request_suggestion(self):
-        """Request a suggestion from the game scene."""
         if isinstance(self.scene(), GameScene):
             self.scene().suggest_best_move()
 
@@ -1204,7 +1634,230 @@ class GameView(QGraphicsView):
         else:
             super().keyPressEvent(event)
 
+
+from PyQt5.QtWidgets import (
+    QDialog, QVBoxLayout, QLabel, QRadioButton, QButtonGroup,
+    QDialogButtonBox, QLineEdit, QMessageBox
+)
+
+class ConfigDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Konfiguracja Gry")
+        self.setFixedSize(300, 300)
+
+        layout = QVBoxLayout(self)
+
+        # Label
+        label = QLabel("Wybierz tryb gry:")
+        layout.addWidget(label)
+
+        self.button_group = QButtonGroup(self)
+        self.radio_single = QRadioButton("1 gracz")
+        self.radio_local = QRadioButton("2 graczy lokalnie")
+        self.radio_network = QRadioButton("Gra sieciowa")
+        self.button_group.addButton(self.radio_single)
+        self.button_group.addButton(self.radio_local)
+        self.button_group.addButton(self.radio_network)
+        layout.addWidget(self.radio_single)
+        layout.addWidget(self.radio_local)
+        layout.addWidget(self.radio_network)
+
+        self.ip_input = QLineEdit()
+        self.ip_input.setPlaceholderText("Adres IP (np. 192.168.1.100 lub 'server')")
+        layout.addWidget(self.ip_input)
+
+        self.port_input = QLineEdit()
+        self.port_input.setPlaceholderText("Port (np. 5000)")
+        layout.addWidget(self.port_input)
+
+        self.ip_input.hide()
+        self.port_input.hide()
+
+        self.radio_network.toggled.connect(self.toggle_network_fields)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+        self.radio_single.setChecked(True)
+
+    def toggle_network_fields(self, checked):
+        self.ip_input.setVisible(checked)
+        self.port_input.setVisible(checked)
+
+    def get_selected_mode(self):
+        if self.radio_single.isChecked():
+            return "1 gracz"
+        elif self.radio_local.isChecked():
+            return "2 graczy lokalnie"
+        elif self.radio_network.isChecked():
+            return "Gra sieciowa"
+        return None
+
+    def get_ip_port(self):
+        return self.ip_input.text().strip(), self.port_input.text().strip()
+
+    def accept(self):
+        if self.radio_network.isChecked():
+            ip = self.ip_input.text().strip()
+            port = self.port_input.text().strip()
+
+            if ip.lower() != "server":
+                import re
+                ip_pattern = r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+                if not re.match(ip_pattern, ip):
+                    QMessageBox.warning(self, "Błąd", "Wprowadź poprawny adres IP lub wpisz 'server'")
+                    return
+
+            if not port.isdigit() or not (0 < int(port) < 65536):
+                QMessageBox.warning(self, "Błąd", "Wprowadź poprawny port (1–65535)")
+                return
+
+        super().accept()
+
+
+import xml.etree.ElementTree as ET
+
+def save_current_game_to_xml(scene):
+    root = ET.Element("game")
+    root.set("level", str(scene.level))
+    root.set("mode", scene.game_mode)
+
+    last_step = scene.replay_steps[-1] if scene.replay_steps else None
+    if last_step:
+        step_el = ET.SubElement(root, "step", {
+            "turn": last_step["turn"],
+            "timer": str(last_step["timer"])
+        })
+
+        for cell_data in last_step["cells"]:
+            cell_el = ET.SubElement(step_el, "cell", {
+                "x": str(cell_data["x"]),
+                "y": str(cell_data["y"]),
+                "value": str(cell_data["value"]),
+                "color": cell_data["color"],
+                "level": str(cell_data["level"])
+            })
+
+            if "top_value" in cell_data:
+                cell_el.set("top_value", str(cell_data["top_value"]))
+            if "circles" in cell_data:
+                cell_el.set("circles", cell_data["circles"])
+
+        for line_data in last_step.get("lines", []):
+            ET.SubElement(step_el, "line", {
+                "start_x": str(line_data["start_x"]),
+                "start_y": str(line_data["start_y"]),
+                "end_x": str(line_data["end_x"]),
+                "end_y": str(line_data["end_y"]),
+                "color": line_data["color"]
+            })
+
+    tree = ET.ElementTree(root)
+    tree.write("last_save.xml")
+    game_view_instance.logger.log("Zapisano stan gry do last_save.xml")
+
+
+def load_last_game_from_xml():
+    try:
+        tree = ET.parse("last_save.xml")
+        root = tree.getroot()
+
+        level = int(root.get("level"))
+        mode = root.get("mode")
+        step_el = root.find("step")
+        if step_el is None:
+            return None
+
+        step = {
+            "turn": step_el.get("turn"),
+            "timer": int(step_el.get("timer")),
+            "cells": [],
+            "lines": []
+        }
+
+        for cell_el in step_el.findall("cell"):
+            cell_data = {
+                "x": int(cell_el.get("x")),
+                "y": int(cell_el.get("y")),
+                "value": int(cell_el.get("value")),
+                "color": cell_el.get("color"),
+                "level": int(cell_el.get("level"))
+            }
+            if cell_el.get("top_value"):
+                cell_data["top_value"] = int(cell_el.get("top_value"))
+            if cell_el.get("circles"):
+                cell_data["circles"] = cell_el.get("circles")
+            step["cells"].append(cell_data)
+
+        for line_el in step_el.findall("line"):
+            line_data = {
+                "start_x": int(line_el.get("start_x")),
+                "start_y": int(line_el.get("start_y")),
+                "end_x": int(line_el.get("end_x")),
+                "end_y": int(line_el.get("end_y")),
+                "color": line_el.get("color")
+            }
+            step["lines"].append(line_data)
+
+        return {
+            "level": level,
+            "mode": mode,
+            "last_step": step
+        }
+    except Exception as e:
+        print("Błąd przy wczytywaniu last_save.xml:", e)
+        return None
+
+
+def save_current_game(scene):
+    game_state = {
+        "level": scene.level,
+        "mode": scene.game_mode,
+        "last_step": scene.replay_steps[-1] if scene.replay_steps else None
+    }
+    with open("last_save.pkl", "wb") as f:
+        pickle.dump(game_state, f)
+    game_view_instance.logger.log("Zapisano stan gry do last_save.pkl")
+
+def load_last_game():
+    try:
+        with open("last_save.pkl", "rb") as f:
+            return pickle.load(f)
+    except Exception as e:
+        print("Brak zapisu lub błąd odczytu:", e)
+        return None
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     view = GameView()
+    view.setWindowTitle("Strategia – Gra Komórkowa")
+    view.setFixedSize(900, 900)
+    view.setRenderHint(QPainter.Antialiasing)
+
+    game_view_instance = view  
+
+    if os.path.exists("last_save.xml"):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Question)
+        msg.setWindowTitle("Wznawianie gry")
+        msg.setText("Chcesz kontynuować ostatnią zapisaną grę?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        result = msg.exec_()
+        if result == QMessageBox.Yes:
+            saved = load_last_game_from_xml()
+
+            if saved and saved["last_step"]:
+                scene = GameScene(level=saved["level"], game_mode=saved["mode"])
+                view.setScene(scene)
+                scene.apply_step(saved["last_step"])  
+            else:
+                view.setScene(MainMenuScene())
+        else:
+            view.setScene(MainMenuScene())
+    else:
+        view.setScene(MainMenuScene())
+
+    view.show()
     sys.exit(app.exec_())
