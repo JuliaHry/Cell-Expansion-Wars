@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import QApplication, QGraphicsView, QGraphicsScene, QPushBu
 from PyQt5.QtGui import QPainter, QBrush, QColor, QPen, QFont
 from PyQt5.QtCore import Qt, QTimer, QPointF, QRectF, QLineF
 from pymongo import MongoClient
-from Hrycyna_Julia_193272 import ClickableCell
+from eks_komorek import ClickableCell
 
 class ReplayScene(QGraphicsScene):
     def __init__(self):

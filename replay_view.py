@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QBrush, QPen, QColor, QFont, QPainter
 from PyQt5.QtCore import QLineF, QPointF, QRectF, QTimer, Qt
-from Hrycyna_Julia_193272 import ClickableCell
+from eks_komorek import ClickableCell
 
 
 class ReplayScene(QGraphicsScene):
