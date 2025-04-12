@@ -17,8 +17,57 @@ from PyQt5.QtWidgets import QMessageBox
 import xml.etree.ElementTree as ET
 import threading
 from network import network_signal_handler
+<<<<<<< HEAD
+import socket
+import time
+from PyQt5.QtWidgets import QMessageBox
+=======
+>>>>>>> 1e77678729e4cf3e5f272c785ff28698ddffcf99
 
 game_view_instance = None
+
+
+def check_server_availability(ip, port, timeout=2):
+    """
+    Check if a server is available at the specified IP and port
+    
+    Args:
+        ip (str): IP address to check
+        port (int or str): Port number to check
+        timeout (float): Timeout in seconds for the connection attempt
+        
+    Returns:
+        bool: True if server is available, False otherwise
+    """
+    try:
+        # Convert port to integer if it's a string
+        if isinstance(port, str):
+            port = int(port)
+            
+        # Create a socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        
+        # Attempt to connect
+        result = sock.connect_ex((ip, port))
+        sock.close()
+        
+        # If result is 0, the connection was successful
+        return result == 0
+    except (socket.error, ValueError) as e:
+        print(f"Error checking server: {e}")
+        return False
+
+def show_server_error_dialog():
+    """Show an error dialog indicating the server isn't available"""
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.Critical)
+    msg.setWindowTitle("Błąd połączenia")
+    msg.setText("Brak podanego serwera")
+    msg.setInformativeText("Nie można połączyć się z serwerem pod podanym adresem IP i portem. Sprawdź, czy serwer jest uruchomiony i spróbuj ponownie.")
+    msg.setStandardButtons(QMessageBox.Ok)
+    msg.exec_()
+
 
 class Logger:
     def __init__(self, log_widget=None, max_lines=100):
@@ -1571,6 +1620,15 @@ class GameScene(QGraphicsScene):
         )
 
         restart_button.mousePressEvent = self.restart_game
+        
+        # Zapisz odnośnik do przycisku jako atrybut klasy
+        self.restart_button = restart_button
+        self.restart_text = restart_text
+        
+        # Ukryj przycisk restart w trybie sieciowym
+        if self.game_mode == "Gra sieciowa":
+            restart_button.setVisible(False)
+            restart_text.setVisible(False)
 
     def restart_game(self, event):
         view = self.views()[0]
@@ -1746,6 +1804,23 @@ class LevelSelectionScene(QGraphicsScene):
                     
                     game_view_instance.logger.log("Klient połączony! Grasz zielonymi.")
                 else:
+<<<<<<< HEAD
+                    # First check if the server is available
+                    if check_server_availability(ip, port):
+                        # Connect as client
+                        client = NetworkClient(ip=ip, port=port)
+                        client.set_scene(scene)  # Set scene reference
+                        client.connect()
+                        client.send("Gracz dołączył!")
+                        scene.client = client  # Store client reference
+                        
+                        game_view_instance.logger.log("Połączono z serwerem! Grasz różowymi.")
+                        view.setScene(scene)
+                    else:
+                        # Server is not available
+                        show_server_error_dialog()
+                        return  # Don't proceed to the game scene
+=======
                     # Connect as client
                     client = NetworkClient(ip=ip, port=port)
                     client.set_scene(scene)  # Set scene reference
@@ -1754,6 +1829,7 @@ class LevelSelectionScene(QGraphicsScene):
                     scene.client = client  # Store client reference
                     
                     game_view_instance.logger.log("Połączono z serwerem! Grasz różowymi.")
+>>>>>>> 1e77678729e4cf3e5f272c785ff28698ddffcf99
 
             view.setScene(scene)
 
@@ -1869,6 +1945,23 @@ class MainMenuScene(QGraphicsScene):
                     
                     game_view_instance.logger.log("Klient połączony! Grasz zielonymi.")
                 else:
+<<<<<<< HEAD
+                    # First check if the server is available
+                    if check_server_availability(ip, port):
+                        # Connect as client
+                        client = NetworkClient(ip=ip, port=port)
+                        client.set_scene(scene)  # Set scene reference
+                        client.connect()
+                        client.send("Gracz dołączył!")
+                        scene.client = client  # Store client reference
+                        
+                        game_view_instance.logger.log("Połączono z serwerem! Grasz różowymi.")
+                        view.setScene(scene)
+                    else:
+                        # Server is not available
+                        show_server_error_dialog()
+                        return  # Don't proceed to the game scene
+=======
                     # Connect as client
                     client = NetworkClient(ip=ip, port=port)
                     client.set_scene(scene)  # Set scene reference
@@ -1877,6 +1970,7 @@ class MainMenuScene(QGraphicsScene):
                     scene.client = client  # Store client reference
                     
                     game_view_instance.logger.log("Połączono z serwerem! Grasz różowymi.")
+>>>>>>> 1e77678729e4cf3e5f272c785ff28698ddffcf99
 
             view.setScene(scene)
 

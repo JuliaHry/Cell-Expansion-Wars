@@ -3,7 +3,12 @@ import threading
 import time
 import json
 from PyQt5.QtCore import QObject, pyqtSignal, Qt
+<<<<<<< HEAD
+
+
+=======
 from PyQt5.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QLabel, QLineEdit, QDialogButtonBox
+>>>>>>> 1e77678729e4cf3e5f272c785ff28698ddffcf99
 
 # Create a global signal handler for thread-safe logging and synchronization
 class NetworkSignalHandler(QObject):
@@ -134,6 +139,13 @@ class NetworkServer:
                 data = client_socket.recv(1024).decode()
                 if data:
                     print("Odebrano:", data)
+<<<<<<< HEAD
+                    # Emit signal for logging instead of direct call
+                    network_signal_handler.log_message.emit(f"Odebrano: {data}")
+                    
+                    # Handle cell values update from client
+                    if data.startswith("CELL_VALUES:"):
+=======
                     network_signal_handler.log_message.emit(f"Odebrano: {data}")
                     
                     # Handle level check from client
@@ -150,6 +162,7 @@ class NetworkServer:
                     
                     # Handle cell values update from client
                     elif data.startswith("CELL_VALUES:"):
+>>>>>>> 1e77678729e4cf3e5f272c785ff28698ddffcf99
                         try:
                             json_str = data[len("CELL_VALUES:"):]
                             cell_values = json.loads(json_str)
@@ -244,6 +257,17 @@ class NetworkClient:
         self.scene = scene
 
     def connect(self):
+<<<<<<< HEAD
+        try:
+            self.client_socket.connect((self.ip, self.port))
+            self.connected = True
+            print(f"Połączono z serwerem {self.ip}:{self.port}")
+            threading.Thread(target=self.receive_messages, daemon=True).start()
+            threading.Thread(target=self.send_periodic_message, daemon=True).start()
+            threading.Thread(target=self.send_cell_updates, daemon=True).start()
+        except Exception as e:
+            print("Błąd połączenia:", e)
+=======
         while not self.connected:
             try:
                 self.client_socket.connect((self.ip, self.port))
@@ -371,6 +395,49 @@ class NetworkClient:
         cell_values_json = json.dumps(cell_values)
         cell_update_msg = f"CELL_VALUES:{cell_values_json}"
         self.send(cell_update_msg)
+>>>>>>> 1e77678729e4cf3e5f272c785ff28698ddffcf99
+
+    def send_cell_updates(self):
+        """Periodically send cell values during pink's turn"""
+        while self.connected:
+            time.sleep(1)  # Send updates every second
+            
+            # Only send updates during pink's turn
+            if self.current_turn == "pink" and self.scene:
+                self.send_cell_values()
+                
+    def send_cell_values(self):
+        """Collect and send all cell values to server during client's turn"""
+        if not self.scene:
+            return
+            
+        cell_values = {}
+        
+        for cell in self.scene.cells:
+            cell_key = f"{int(cell.rect().x())},{int(cell.rect().y())}"
+            cell_data = {
+                "value": cell.value,
+                "color": cell.base_color.name(),
+                "level": cell.level
+            }
+            
+            # Add gray cell specific values
+            if cell.base_color == Qt.gray and hasattr(cell, "_actual_top_value"):
+                cell_data["top_value"] = cell._actual_top_value
+                
+            # Add inner circle states if present
+            if cell.inner_circles:
+                circle_states = []
+                for circle in cell.inner_circles:
+                    circle_states.append(circle.brush().color().name())
+                cell_data["circles"] = circle_states
+                
+            cell_values[cell_key] = cell_data
+            
+        # Convert to JSON and send
+        cell_values_json = json.dumps(cell_values)
+        cell_update_msg = f"CELL_VALUES:{cell_values_json}"
+        self.send(cell_update_msg)
 
     def send(self, msg):
         if self.connected:
@@ -395,6 +462,10 @@ class NetworkClient:
                 data = self.client_socket.recv(1024).decode()
                 if data:
                     print("Odebrano:", data)
+<<<<<<< HEAD
+                    # Emit signal for logging instead of direct call
+=======
+>>>>>>> 1e77678729e4cf3e5f272c785ff28698ddffcf99
                     network_signal_handler.log_message.emit(f"Odebrano: {data}")
                     
                     # Handle turn information updates
