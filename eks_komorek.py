@@ -17,12 +17,9 @@ from PyQt5.QtWidgets import QMessageBox
 import xml.etree.ElementTree as ET
 import threading
 from network import network_signal_handler
-<<<<<<< HEAD
 import socket
 import time
 from PyQt5.QtWidgets import QMessageBox
-=======
->>>>>>> 1e77678729e4cf3e5f272c785ff28698ddffcf99
 
 game_view_instance = None
 
@@ -1620,15 +1617,6 @@ class GameScene(QGraphicsScene):
         )
 
         restart_button.mousePressEvent = self.restart_game
-        
-        # Zapisz odnośnik do przycisku jako atrybut klasy
-        self.restart_button = restart_button
-        self.restart_text = restart_text
-        
-        # Ukryj przycisk restart w trybie sieciowym
-        if self.game_mode == "Gra sieciowa":
-            restart_button.setVisible(False)
-            restart_text.setVisible(False)
 
     def restart_game(self, event):
         view = self.views()[0]
@@ -1804,7 +1792,6 @@ class LevelSelectionScene(QGraphicsScene):
                     
                     game_view_instance.logger.log("Klient połączony! Grasz zielonymi.")
                 else:
-<<<<<<< HEAD
                     # First check if the server is available
                     if check_server_availability(ip, port):
                         # Connect as client
@@ -1820,16 +1807,6 @@ class LevelSelectionScene(QGraphicsScene):
                         # Server is not available
                         show_server_error_dialog()
                         return  # Don't proceed to the game scene
-=======
-                    # Connect as client
-                    client = NetworkClient(ip=ip, port=port)
-                    client.set_scene(scene)  # Set scene reference
-                    client.connect()
-                    client.send("Gracz dołączył!")
-                    scene.client = client  # Store client reference
-                    
-                    game_view_instance.logger.log("Połączono z serwerem! Grasz różowymi.")
->>>>>>> 1e77678729e4cf3e5f272c785ff28698ddffcf99
 
             view.setScene(scene)
 
@@ -1945,7 +1922,6 @@ class MainMenuScene(QGraphicsScene):
                     
                     game_view_instance.logger.log("Klient połączony! Grasz zielonymi.")
                 else:
-<<<<<<< HEAD
                     # First check if the server is available
                     if check_server_availability(ip, port):
                         # Connect as client
@@ -1961,16 +1937,6 @@ class MainMenuScene(QGraphicsScene):
                         # Server is not available
                         show_server_error_dialog()
                         return  # Don't proceed to the game scene
-=======
-                    # Connect as client
-                    client = NetworkClient(ip=ip, port=port)
-                    client.set_scene(scene)  # Set scene reference
-                    client.connect()
-                    client.send("Gracz dołączył!")
-                    scene.client = client  # Store client reference
-                    
-                    game_view_instance.logger.log("Połączono z serwerem! Grasz różowymi.")
->>>>>>> 1e77678729e4cf3e5f272c785ff28698ddffcf99
 
             view.setScene(scene)
 

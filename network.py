@@ -3,12 +3,7 @@ import threading
 import time
 import json
 from PyQt5.QtCore import QObject, pyqtSignal, Qt
-<<<<<<< HEAD
 
-
-=======
-from PyQt5.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QLabel, QLineEdit, QDialogButtonBox
->>>>>>> 1e77678729e4cf3e5f272c785ff28698ddffcf99
 
 # Create a global signal handler for thread-safe logging and synchronization
 class NetworkSignalHandler(QObject):
@@ -139,30 +134,11 @@ class NetworkServer:
                 data = client_socket.recv(1024).decode()
                 if data:
                     print("Odebrano:", data)
-<<<<<<< HEAD
                     # Emit signal for logging instead of direct call
                     network_signal_handler.log_message.emit(f"Odebrano: {data}")
                     
                     # Handle cell values update from client
                     if data.startswith("CELL_VALUES:"):
-=======
-                    network_signal_handler.log_message.emit(f"Odebrano: {data}")
-                    
-                    # Handle level check from client
-                    if data.startswith("LEVEL_CHECK:"):
-                        client_level = int(data.split(":")[1])
-                        if client_level != self.scene.level:
-                            mismatch_msg = f"LEVEL_MISMATCH:{self.scene.level}"
-                            client_socket.sendall(mismatch_msg.encode())
-                            client_socket.close()
-                            self.clients.remove(client_socket)
-                            return
-                        else:
-                            client_socket.sendall("LEVEL_OK".encode())
-                    
-                    # Handle cell values update from client
-                    elif data.startswith("CELL_VALUES:"):
->>>>>>> 1e77678729e4cf3e5f272c785ff28698ddffcf99
                         try:
                             json_str = data[len("CELL_VALUES:"):]
                             cell_values = json.loads(json_str)
@@ -257,7 +233,6 @@ class NetworkClient:
         self.scene = scene
 
     def connect(self):
-<<<<<<< HEAD
         try:
             self.client_socket.connect((self.ip, self.port))
             self.connected = True
@@ -267,135 +242,6 @@ class NetworkClient:
             threading.Thread(target=self.send_cell_updates, daemon=True).start()
         except Exception as e:
             print("Błąd połączenia:", e)
-=======
-        while not self.connected:
-            try:
-                self.client_socket.connect((self.ip, self.port))
-                self.connected = True
-                print(f"Połączono z serwerem {self.ip}:{self.port}")
-                
-                # Verify level compatibility
-                self.verify_level_compatibility()
-                
-                threading.Thread(target=self.receive_messages, daemon=True).start()
-                threading.Thread(target=self.send_periodic_message, daemon=True).start()
-                threading.Thread(target=self.send_cell_updates, daemon=True).start()
-            except Exception as e:
-                print("Błąd połączenia:", e)
-                self.show_connection_error_dialog()
-
-    def verify_level_compatibility(self):
-        """Send the client's level to the server and verify compatibility."""
-        if not self.scene:
-            return
-        
-        client_level = self.scene.level
-        self.send(f"LEVEL_CHECK:{client_level}")
-        
-        # Wait for server response
-        response = self.client_socket.recv(1024).decode()
-        if response.startswith("LEVEL_MISMATCH"):
-            server_level = response.split(":")[1]
-            self.show_level_mismatch_dialog(server_level)
-            self.connected = False
-            self.client_socket.close()
-
-    def show_level_mismatch_dialog(self, server_level):
-        """Display a dialog box to inform the user about level mismatch."""
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Warning)
-        msg.setWindowTitle("Błąd poziomu")
-        msg.setText("Poziom gry na serwerze nie zgadza się z poziomem klienta.")
-        msg.setInformativeText(f"Serwer działa na poziomie {server_level}. Zmień poziom i spróbuj ponownie.")
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.exec_()
-
-    def show_connection_error_dialog(self):
-        """Display a dialog box to inform the user about connection failure and allow retry."""
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Warning)
-        msg.setWindowTitle("Błąd połączenia")
-        msg.setText("Nie udało się połączyć z serwerem pod podanym adresem IP i portem.")
-        msg.setInformativeText("Sprawdź poprawność adresu IP i portu, a następnie spróbuj ponownie.")
-        msg.setStandardButtons(QMessageBox.Retry | QMessageBox.Cancel)
-        result = msg.exec_()
-
-        if result == QMessageBox.Retry:
-            self.ip, self.port = self.prompt_for_new_connection_details()
-        else:
-            self.connected = False
-
-    def prompt_for_new_connection_details(self):
-        """Prompt the user to enter a new IP and port."""
-        dialog = QDialog()
-        dialog.setWindowTitle("Podaj nowe dane połączenia")
-        layout = QVBoxLayout(dialog)
-
-        ip_label = QLabel("Adres IP:")
-        ip_input = QLineEdit()
-        ip_input.setText(self.ip)
-        layout.addWidget(ip_label)
-        layout.addWidget(ip_input)
-
-        port_label = QLabel("Port:")
-        port_input = QLineEdit()
-        port_input.setText(str(self.port))
-        layout.addWidget(port_label)
-        layout.addWidget(port_input)
-
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        button_box.accepted.connect(dialog.accept)
-        button_box.rejected.connect(dialog.reject)
-        layout.addWidget(button_box)
-
-        if dialog.exec_() == QDialog.Accepted:
-            new_ip = ip_input.text().strip()
-            new_port = port_input.text().strip()
-            return new_ip, int(new_port) if new_port.isdigit() else self.port
-        return self.ip, self.port
-
-    def send_cell_updates(self):
-        """Periodically send cell values during pink's turn"""
-        while self.connected:
-            time.sleep(1)  # Send updates every second
-            
-            # Only send updates during pink's turn
-            if self.current_turn == "pink" and self.scene:
-                self.send_cell_values()
-                
-    def send_cell_values(self):
-        """Collect and send all cell values to server during client's turn"""
-        if not self.scene:
-            return
-            
-        cell_values = {}
-        
-        for cell in self.scene.cells:
-            cell_key = f"{int(cell.rect().x())},{int(cell.rect().y())}"
-            cell_data = {
-                "value": cell.value,
-                "color": cell.base_color.name(),
-                "level": cell.level
-            }
-            
-            # Add gray cell specific values
-            if cell.base_color == Qt.gray and hasattr(cell, "_actual_top_value"):
-                cell_data["top_value"] = cell._actual_top_value
-                
-            # Add inner circle states if present
-            if cell.inner_circles:
-                circle_states = []
-                for circle in cell.inner_circles:
-                    circle_states.append(circle.brush().color().name())
-                cell_data["circles"] = circle_states
-                
-            cell_values[cell_key] = cell_data
-            
-        # Convert to JSON and send
-        cell_values_json = json.dumps(cell_values)
-        cell_update_msg = f"CELL_VALUES:{cell_values_json}"
-        self.send(cell_update_msg)
->>>>>>> 1e77678729e4cf3e5f272c785ff28698ddffcf99
 
     def send_cell_updates(self):
         """Periodically send cell values during pink's turn"""
@@ -462,10 +308,7 @@ class NetworkClient:
                 data = self.client_socket.recv(1024).decode()
                 if data:
                     print("Odebrano:", data)
-<<<<<<< HEAD
                     # Emit signal for logging instead of direct call
-=======
->>>>>>> 1e77678729e4cf3e5f272c785ff28698ddffcf99
                     network_signal_handler.log_message.emit(f"Odebrano: {data}")
                     
                     # Handle turn information updates
