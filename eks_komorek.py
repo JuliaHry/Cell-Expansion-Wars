@@ -15,6 +15,8 @@ import resources
 import pickle
 from PyQt5.QtWidgets import QMessageBox
 import xml.etree.ElementTree as ET
+import threading
+from network import network_signal_handler
 
 game_view_instance = None
 
@@ -55,6 +57,39 @@ class ClickableLine(QGraphicsLineItem):
             game_view_instance.logger.log("Brak start_cell lub end_cell w linii")
 
     def mousePressEvent(self, event):
+        # Check if this line can be clicked based on game mode and turn
+        scene = self.scene()
+        if isinstance(scene, GameScene):
+            # For network games, check if line color matches player role
+            if scene.game_mode == "Gra sieciowa":
+                is_server = hasattr(scene, 'server') and scene.server is not None
+                is_client = hasattr(scene, 'client') and scene.client is not None
+                
+                # Server can only click green lines during green turn
+                if is_server and (self.start_cell.base_color != QColor("#66C676") or scene.current_turn != "green"):
+                    game_view_instance.logger.log("Nie możesz usuwać tej linii!")
+                    return
+                    
+                # Client can only click pink lines during pink turn
+                if is_client and (self.start_cell.base_color != QColor("#D8177E") or scene.current_turn != "pink"):
+                    game_view_instance.logger.log("Nie możesz usuwać tej linii!")
+                    return
+            
+            # For all game modes, check if line color matches turn
+            if (self.start_cell.base_color == QColor("#66C676") and scene.current_turn != "green") or \
+            (self.start_cell.base_color == QColor("#D8177E") and scene.current_turn != "pink"):
+                game_view_instance.logger.log("Nie możesz usuwać linii przeciwnika!")
+                return
+        
+        # Get positions before removing line
+        start_cell_pos = (int(self.start_cell.rect().x()), int(self.start_cell.rect().y()))
+        end_cell_pos = (int(self.end_cell.rect().x()), int(self.end_cell.rect().y()))
+        start_color = "zielona" if self.start_cell.base_color == QColor("#66C676") else "różowa"
+        end_color = "zielona" if self.end_cell.base_color == QColor("#66C676") else "różowa"
+        if self.end_cell.base_color == Qt.gray:
+            end_color = "szara"
+        
+        # Original line interaction logic
         clicked_pos = event.scenePos()
         start_pos = self.line().p1()
         end_pos = self.line().p2()
@@ -87,6 +122,18 @@ class ClickableLine(QGraphicsLineItem):
             if circle.brush().color() == Qt.black:
                 circle.setBrush(QBrush(Qt.white))
                 break
+
+        # Send line removal notification over network
+        if isinstance(scene, GameScene) and scene.game_mode == "Gra sieciowa":
+            line_info = f"USUNIETO_LINIE:{start_cell_pos[0]},{start_cell_pos[1]}:{end_cell_pos[0]},{end_cell_pos[1]}:{start_color}:{end_color}"
+            
+            if hasattr(scene, 'server') and scene.server is not None:
+                # Server is sending
+                for client in scene.server.clients:
+                    client.sendall(line_info.encode())
+            elif hasattr(scene, 'client') and scene.client is not None:
+                # Client is sending
+                scene.client.send(line_info)
 
         self.scene().removeItem(self)
         super().mousePressEvent(event)
@@ -370,14 +417,45 @@ class ClickableCell(QGraphicsEllipseItem):
             cell.setPen(QPen(Qt.black, 2))
 
     def mousePressEvent(self, event):
+        # Check scene and game mode
+        scene = self.scene()
+        if not isinstance(scene, GameScene):
+            super().mousePressEvent(event)
+            return
             
+        # Handle moving cells first
         if ClickableCell.moving_cell:
             ClickableCell.moving_cell.setPen(QPen(Qt.black, 2))
             self.setPen(QPen(QColor("#FFA500"), 8, Qt.SolidLine))
             ClickableCell.moving_cell = self
             return
+        
+        # For network games, check which player color we are
+        if scene.game_mode == "Gra sieciowa":
+            # Determine if we're server (green) or client (pink)
+            is_server = hasattr(scene, 'server') and scene.server is not None
+            is_client = hasattr(scene, 'client') and scene.client is not None
+            
+            # Block interaction based on color and turn
+            if is_server and scene.current_turn == "pink":
+                # Server can only interact with green cells and only during green turn
+                game_view_instance.logger.log("Nie twoja tura - poczekaj na swoją kolej!")
+                return
+            elif is_client and scene.current_turn == "green":
+                # Client can only interact with pink cells and only during pink turn
+                game_view_instance.logger.log("Nie twoja tura - poczekaj na swoją kolej!")
+                return
 
+        # Continue with the original mousePressEvent logic
         if self.base_color == QColor("#66C676") or self.base_color == QColor("#D8177E"): 
+            # Color and turn check for all game modes
+            if self.base_color == QColor("#66C676") and scene.current_turn != "green":
+                game_view_instance.logger.log("Teraz jest tura różowego!")
+                return
+            if self.base_color == QColor("#D8177E") and scene.current_turn != "pink":
+                game_view_instance.logger.log("Teraz jest tura zielonego!")
+                return
+                
             if all(circle.brush().color() == Qt.black for circle in self.inner_circles):
                 game_view_instance.logger.log("Oba wewnętrzne kółka są czarne, nie można wybrać komórki.")
                 return
@@ -408,24 +486,47 @@ class ClickableCell(QGraphicsEllipseItem):
                             circle.setBrush(QBrush(Qt.black))
                             break
                     
-                    ClickableCell.selected_green.clear_highlight()  
+                    ClickableCell.selected_green.clear_highlight()
+                    
+                    # Send line creation notification over network if in network mode
+                    if scene.game_mode == "Gra sieciowa":
+                        start_cell_pos = (int(ClickableCell.selected_green.rect().x()), int(ClickableCell.selected_green.rect().y()))
+                        end_cell_pos = (int(self.rect().x()), int(self.rect().y()))
+                        start_color = "zielona" if ClickableCell.selected_green.base_color == QColor("#66C676") else "różowa"
+                        end_color = "zielona" if self.base_color == QColor("#66C676") else "różowa"
+                        if end_color == "zielona":
+                            end_color_desc = "zielonej"
+                        elif end_color == "różowa":
+                            end_color_desc = "różowej"
+                        else:
+                            end_color_desc = "szarej"
+                        
+                        line_info = f"UTWORZONO_LINIE:{start_cell_pos[0]},{start_cell_pos[1]}:{end_cell_pos[0]},{end_cell_pos[1]}:{start_color}:{end_color_desc}"
+                        
+                        if hasattr(scene, 'server') and scene.server is not None:
+                            # Server is sending
+                            for client in scene.server.clients:
+                                client.sendall(line_info.encode())
+                        elif hasattr(scene, 'client') and scene.client is not None:
+                            # Client is sending
+                            scene.client.send(line_info)
+                    
                     ClickableCell.selected_green = None
                     ClickableCell.is_creating_line = False
             else:
-                scene = self.scene()
-                if isinstance(scene, GameScene):
-                    if self.base_color == QColor("#66C676") and scene.current_turn != "green":
-                        return
-                    if self.base_color == QColor("#D8177E") and scene.current_turn != "pink":
-                        return
-
                 game_view_instance.logger.log(f"Rozpoczęcie tworzenia linii z {self.base_color.name()}")
                 self.setPen(QPen(QColor("#A4DEFA"), 8, Qt.SolidLine))
                 ClickableCell.selected_green = self
                 ClickableCell.is_creating_line = True
                 self.highlight_valid_targets() 
 
-        elif self.base_color == Qt.gray and ClickableCell.selected_green:  
+        elif self.base_color == Qt.gray and ClickableCell.selected_green:
+            # For gray cells, check if the starting cell's color matches the current turn
+            if (ClickableCell.selected_green.base_color == QColor("#66C676") and scene.current_turn != "green") or \
+            (ClickableCell.selected_green.base_color == QColor("#D8177E") and scene.current_turn != "pink"):
+                game_view_instance.logger.log("Nie możesz tworzyć linii w turze przeciwnika!")
+                return
+                
             game_view_instance.logger.log(f"Tworzenie linii z2 {ClickableCell.selected_green.base_color.name()} do szarej komórki")
             if all(circle.brush().color() == Qt.black for circle in ClickableCell.selected_green.inner_circles):
                 game_view_instance.logger.log("Oba wewnętrzne kółka w komórce startowej są czarne, nie można stworzyć linii.")
@@ -451,6 +552,22 @@ class ClickableCell(QGraphicsEllipseItem):
                 if circle.brush().color() != Qt.black:
                     circle.setBrush(QBrush(Qt.black))
                     break
+
+            # Send line creation notification over network if in network mode
+            if scene.game_mode == "Gra sieciowa":
+                start_cell_pos = (int(ClickableCell.selected_green.rect().x()), int(ClickableCell.selected_green.rect().y()))
+                end_cell_pos = (int(self.rect().x()), int(self.rect().y()))
+                start_color = "zielona" if ClickableCell.selected_green.base_color == QColor("#66C676") else "różowa"
+                
+                line_info = f"UTWORZONO_LINIE:{start_cell_pos[0]},{start_cell_pos[1]}:{end_cell_pos[0]},{end_cell_pos[1]}:{start_color}:szarej"
+                
+                if hasattr(scene, 'server') and scene.server is not None:
+                    # Server is sending
+                    for client in scene.server.clients:
+                        client.sendall(line_info.encode())
+                elif hasattr(scene, 'client') and scene.client is not None:
+                    # Client is sending
+                    scene.client.send(line_info)
 
             ClickableCell.selected_green.clear_highlight()  
             ClickableCell.selected_green = None
@@ -597,12 +714,18 @@ class GameScene(QGraphicsScene):
         self.create_restart_button() 
         self.create_history_buttons()
         self.current_turn = "green"  
+        
+        # Setup turn timer differently for network vs local play
         self.turn_timer = QTimer()
         self.turn_time_limit = 10  
         self.turn_remaining = self.turn_time_limit
-
-        self.turn_timer.timeout.connect(self.update_turn_timer)
-        self.turn_timer.start(1000) 
+        
+        # Only enable turn timer for non-network games
+        # For network games, the server will control the timer
+        if self.game_mode != "Gra sieciowa":
+            self.turn_timer.timeout.connect(self.update_turn_timer)
+            self.turn_timer.start(1000)
+        
         self.create_turn_timer_display()
         self.create_turn_display()  
         self.replay_steps = []
@@ -611,6 +734,155 @@ class GameScene(QGraphicsScene):
         self.replay_timer.start(1000)
 
         self.create_save_button()
+        
+        # Network components
+        self.server = None
+        self.client = None
+
+
+    def setup_network_role(self):
+        """Sets up the network role (server or client) based on configuration"""
+        # Check if we need to create a server
+        # This will be called when starting a new game from the menu
+        if hasattr(self, '_is_server') and self._is_server:
+            self.server = NetworkServer()
+            self.server.set_scene(self)  # Set scene reference
+            self.server.start()
+            game_view_instance.logger.log("Utworzono serwer - grasz zielonymi")
+        elif hasattr(self, '_is_client') and self._is_client:
+            self.client = NetworkClient()
+            self.client.set_scene(self)  # Set scene reference
+            self.client.connect()
+            game_view_instance.logger.log("Połączono z serwerem - grasz różowymi")
+
+    def set_network_role(self, is_server, ip=None, port=None):
+        """Sets the network role before initializing the server/client"""
+        self._is_server = is_server
+        self._server_ip = ip
+        self._server_port = port
+
+    def handle_network_turn_update(self, current_turn, remaining_time):
+        """Handle turn updates received from the network"""
+        if self.game_mode == "Gra sieciowa":
+            old_turn = self.current_turn
+            self.current_turn = current_turn
+            self.turn_remaining = remaining_time
+            
+            # Update the UI
+            self.turn_timer_display.setPlainText(f"Timer: {self.turn_remaining}s")
+            self.turn_display.setPlainText(f"Turn: {self.current_turn.capitalize()}")
+            
+            # Log the turn change if it's different
+            if old_turn != current_turn:
+                if self.server is not None:  # Server is playing as green
+                    if self.current_turn == "green":
+                        game_view_instance.logger.log("Twoja tura! (zielony)")
+                    else:
+                        game_view_instance.logger.log("Tura przeciwnika (różowy)")
+                elif self.client is not None:  # Client is playing as pink
+                    if self.current_turn == "pink":
+                        game_view_instance.logger.log("Twoja tura! (różowy)")
+                    else:
+                        game_view_instance.logger.log("Tura przeciwnika (zielony)")
+                
+                # Reset selected cell and line creation state when turn changes
+                ClickableCell.selected_green = None
+                ClickableCell.is_creating_line = False
+                
+                # Remove any suggestion labels
+                for item in self.items():
+                    if isinstance(item, QGraphicsTextItem) and item.data(0) == "suggestion_label":
+                        self.removeItem(item)
+                
+                # Reset cell highlighting
+                for cell in self.cells:
+                    cell.setPen(QPen(Qt.black, 2))
+
+
+    def handle_network_cell_update(self, cell_values):
+        """Handle cell value updates received from the network"""
+        if self.game_mode != "Gra sieciowa":
+            return
+
+        # Determine if we should apply these updates based on whose turn it is
+        is_server = self.server is not None
+        is_client = self.client is not None
+        
+        # Only apply updates if:
+        # - Server (green) receiving updates during pink's turn
+        # - Client (pink) receiving updates during green's turn
+        should_apply = (is_server and self.current_turn == "pink") or (is_client and self.current_turn == "green")
+        
+        if not should_apply:
+            # Skip applying updates - we're the active player
+            return
+            
+        game_view_instance.logger.log(f"Aktualizacja wartości komórek z sieci: {len(cell_values)} komórek")
+        
+        # Apply the received cell values
+        for pos_key, cell_data in cell_values.items():
+            # Parse position
+            x, y = map(int, pos_key.split(","))
+            
+            # Find the matching cell
+            target_cell = None
+            for cell in self.cells:
+                if int(cell.rect().x()) == x and int(cell.rect().y()) == y:
+                    target_cell = cell
+                    break
+                    
+            if not target_cell:
+                continue
+                
+            # Get current cell color and new desired color
+            current_color = target_cell.base_color
+            new_color = QColor(cell_data["color"])
+            
+            # Update cell value
+            old_value = target_cell.value
+            target_cell.value = cell_data["value"]
+            
+            # Update cell level
+            old_level = target_cell.level
+            target_cell.level = cell_data["level"]
+            
+            # Handle color change if needed
+            if current_color != new_color:
+                if new_color == QColor("#66C676"):
+                    target_cell.convert_to_green()
+                elif new_color == QColor("#D8177E"):
+                    target_cell.convert_to_pink()
+                elif new_color == Qt.gray:
+                    # Gray cell conversion would be more complex
+                    # For simplicity, we're not handling this case
+                    pass
+            else:
+                # Update the value text if it exists
+                if target_cell.value_text:
+                    target_cell.value_text.setPlainText(str(target_cell.value))
+                    
+                # Update level display
+                target_cell.update_level_display()
+                
+            # Update gray cell's top value if applicable
+            if target_cell.base_color == Qt.gray and "top_value" in cell_data:
+                if not hasattr(target_cell, "_actual_top_value"):
+                    target_cell._actual_top_value = 0
+                    
+                target_cell._actual_top_value = cell_data["top_value"]
+                if hasattr(target_cell, "top_text"):
+                    target_cell.top_text.setPlainText(str(abs(target_cell._actual_top_value)))
+                    
+            # Update inner circles if present
+            if "circles" in cell_data and target_cell.inner_circles:
+                circle_states = cell_data["circles"]
+                for i, state in enumerate(circle_states):
+                    if i < len(target_cell.inner_circles):
+                        target_cell.inner_circles[i].setBrush(QBrush(QColor(state)))
+        
+        # Optionally log some information about what was updated
+        if len(cell_values) > 0:
+            game_view_instance.logger.log(f"Zaktualizowano {len(cell_values)} komórek z sieci")
 
 
     def create_cells(self):
@@ -1047,11 +1319,18 @@ class GameScene(QGraphicsScene):
         ClickableCell.selected_green = None
         ClickableCell.is_creating_line = False
 
-        game_view_instance.logger.log(f"Switching turn to {self.current_turn}")
-
-        if self.views(): 
-            view = self.views()[0]
-            view.suggestion_label.hide()
+        # Display turn status for network games
+        if self.game_mode == "Gra sieciowa":
+            if self.server is not None:  # Server is playing as green
+                if self.current_turn == "green":
+                    game_view_instance.logger.log("Twoja tura! (zielony)")
+                else:
+                    game_view_instance.logger.log("Tura przeciwnika (różowy)")
+            elif self.client is not None:  # Client is playing as pink
+                if self.current_turn == "pink":
+                    game_view_instance.logger.log("Twoja tura! (różowy)")
+                else:
+                    game_view_instance.logger.log("Tura przeciwnika (zielony)")
 
         for item in self.items():
             if isinstance(item, QGraphicsTextItem) and item.data(0) == "suggestion_label":
@@ -1107,21 +1386,34 @@ class GameScene(QGraphicsScene):
         super().mouseReleaseEvent(event)
 
     def mousePressEvent(self, event):
+        # Skip interaction if not your turn in network mode
+        if self.game_mode == "Gra sieciowa":
+            is_server = self.server is not None
+            is_client = self.client is not None
+            
+            if (is_server and self.current_turn != "green") or (is_client and self.current_turn != "pink"):
+                game_view_instance.logger.log("Teraz nie twoja tura!")
+                return
+        
+        # For moving cells
         if ClickableCell.moving_cell:
             item = self.itemAt(event.scenePos(), QTransform())
             if isinstance(item, ClickableCell):
                 ClickableCell.moving_cell.setPen(QPen(Qt.black, 2))  
                 item.setPen(QPen(QColor("#FFA500"), 8, Qt.SolidLine))  
                 ClickableCell.moving_cell = item 
-            return  
+            return
+        
+        # For handling clicked items
         item = self.itemAt(event.scenePos(), QTransform())
         if isinstance(item, ClickableLine):
+            # Line handling is now checked within the ClickableLine class
             item.mousePressEvent(event)
         elif not isinstance(item, ClickableCell) and ClickableCell.selected_green:
             ClickableCell.selected_green.clear_highlight() 
             ClickableCell.selected_green.setPen(QPen(Qt.black, 2)) 
-            ClickableCell.selected_green = None 
-            ClickableCell.is_creating_line = False  
+            ClickableCell.selected_green = None
+            ClickableCell.is_creating_line = False
             if self.line:
                 self.removeItem(self.line)
                 self.line = None
@@ -1175,6 +1467,17 @@ class GameScene(QGraphicsScene):
         self.check_winner()
 
     def increase_cell_values(self):
+        """Increment cell values based on color and game mode"""
+        # In network mode, only increase values during your turn
+        if self.game_mode == "Gra sieciowa":
+            is_server = self.server is not None
+            is_client = self.client is not None
+            
+            # Only increase values if it's your turn
+            if (is_server and self.current_turn != "green") or (is_client and self.current_turn != "pink"):
+                return  # Not your turn, don't increase values
+        
+        # Regular value increase logic
         for cell in self.cells:
             if cell.base_color == QColor("#66C676"): 
                 cell.update_value(1)
@@ -1412,17 +1715,48 @@ class LevelSelectionScene(QGraphicsScene):
             ip, port = dialog.get_ip_port()
             print(f"Wybrany tryb gry: {selected_mode}")
 
+            view = self.views()[0]
+            scene = GameScene(level=int(level.split()[-1]), game_mode=selected_mode)
+
             if selected_mode == "Gra sieciowa":
                 if ip == "server":
+                    # Create waiting dialog for server
+                    wait_dialog = QDialog()
+                    wait_dialog.setWindowTitle("Oczekiwanie na połączenie")
+                    layout = QVBoxLayout()
+                    label = QLabel("Serwer nasłuchuje... Oczekiwanie na połączenie klienta.")
+                    layout.addWidget(label)
+                    wait_dialog.setLayout(layout)
+                    wait_dialog.setFixedSize(300, 100)
+                    
+                    # Start server
                     server = NetworkServer(port=port)
+                    server.set_scene(scene)  # Set scene reference
                     server.start()
+                    scene.server = server  # Store server reference
+                    
+                    # Check connection in background
+                    def check_connection():
+                        while not server.connected:
+                            QApplication.processEvents()
+                        wait_dialog.accept()
+                    
+                    threading.Thread(target=check_connection, daemon=True).start()
+                    wait_dialog.exec_()
+                    
+                    game_view_instance.logger.log("Klient połączony! Grasz zielonymi.")
                 else:
+                    # Connect as client
                     client = NetworkClient(ip=ip, port=port)
+                    client.set_scene(scene)  # Set scene reference
                     client.connect()
                     client.send("Gracz dołączył!")
+                    scene.client = client  # Store client reference
+                    
+                    game_view_instance.logger.log("Połączono z serwerem! Grasz różowymi.")
 
-            view = self.views()[0]
-            view.setScene(GameScene(level=int(level.split()[-1]), game_mode=selected_mode)) 
+            view.setScene(scene)
+
 
     def back_to_main_menu(self, event):
         view = self.views()[0]
@@ -1493,7 +1827,9 @@ class MainMenuScene(QGraphicsScene):
 
         play_button.mousePressEvent = self.start_game
         level_button.mousePressEvent = self.show_level_selection
-        exit_button.mousePressEvent = self.exit_game 
+        exit_button.mousePressEvent = self.exit_game
+
+# Update the start_game method in MainMenuScene
 
     def start_game(self, event):
         dialog = ConfigDialog()
@@ -1502,17 +1838,48 @@ class MainMenuScene(QGraphicsScene):
             ip, port = dialog.get_ip_port()
             print(f"Wybrany tryb gry: {selected_mode}")
 
+            view = self.views()[0]
+            scene = GameScene(game_mode=selected_mode)
+
             if selected_mode == "Gra sieciowa":
                 if ip == "server":
+                    # Create waiting dialog for server
+                    wait_dialog = QDialog()
+                    wait_dialog.setWindowTitle("Oczekiwanie na połączenie")
+                    layout = QVBoxLayout()
+                    label = QLabel("Serwer nasłuchuje... Oczekiwanie na połączenie klienta.")
+                    layout.addWidget(label)
+                    wait_dialog.setLayout(layout)
+                    wait_dialog.setFixedSize(300, 100)
+                    
+                    # Start server
                     server = NetworkServer(port=port)
+                    server.set_scene(scene)  # Set scene reference
                     server.start()
+                    scene.server = server  # Store server reference
+                    
+                    # Check connection in background
+                    def check_connection():
+                        while not server.connected:
+                            QApplication.processEvents()
+                        wait_dialog.accept()
+                    
+                    threading.Thread(target=check_connection, daemon=True).start()
+                    wait_dialog.exec_()
+                    
+                    game_view_instance.logger.log("Klient połączony! Grasz zielonymi.")
                 else:
+                    # Connect as client
                     client = NetworkClient(ip=ip, port=port)
+                    client.set_scene(scene)  # Set scene reference
                     client.connect()
                     client.send("Gracz dołączył!")
+                    scene.client = client  # Store client reference
+                    
+                    game_view_instance.logger.log("Połączono z serwerem! Grasz różowymi.")
 
-            view = self.views()[0]
-            view.setScene(GameScene(game_mode=selected_mode)) 
+            view.setScene(scene)
+
 
     def show_level_selection(self, event):
         view = self.views()[0]
@@ -1556,6 +1923,13 @@ class GameView(QGraphicsView):
 
         self.logger = Logger(self.logger_widget)
 
+        # Connect all network signals
+        network_signal_handler.log_message.connect(self.handle_network_log)
+        network_signal_handler.create_line.connect(self.handle_create_line)
+        network_signal_handler.remove_line.connect(self.handle_remove_line)
+        network_signal_handler.update_turn.connect(self.handle_network_turn_update)
+        network_signal_handler.update_cells.connect(self.handle_network_cell_update)  # Add this line
+
         self.setScene(MainMenuScene()) 
         self.setRenderHint(QPainter.Antialiasing)
         self.setFixedSize(900, 900)
@@ -1591,6 +1965,19 @@ class GameView(QGraphicsView):
 
         self.show()
 
+    # Add the handler method for turn updates
+    def handle_network_turn_update(self, current_turn, remaining_time):
+        """Handle turn updates received from the network"""
+        scene = self.scene()
+        if isinstance(scene, GameScene) and scene.game_mode == "Gra sieciowa":
+            scene.handle_network_turn_update(current_turn, remaining_time)
+
+    def handle_network_cell_update(self, cell_values):
+        """Handle cell value updates received from the network"""
+        scene = self.scene()
+        if isinstance(scene, GameScene) and scene.game_mode == "Gra sieciowa":
+            scene.handle_network_cell_update(cell_values)
+
     def setScene(self, scene):
         super().setScene(scene)
         self.message_label = QGraphicsTextItem("")
@@ -1605,6 +1992,48 @@ class GameView(QGraphicsView):
         else:
             self.suggestion_button.hide()
             self.logger_widget.hide()
+
+    def handle_remove_line(self, start_x, start_y, end_x, end_y):
+        """Obsługa usuwania linii z powiadomień sieciowych"""
+        scene = self.scene()
+        if isinstance(scene, GameScene):
+            # Znajdź linię do usunięcia
+            for item in scene.items():
+                if isinstance(item, ClickableLine):
+                    start_cell = item.start_cell
+                    end_cell = item.end_cell
+                    
+                    if start_cell and end_cell:
+                        s_x = int(start_cell.rect().x())
+                        s_y = int(start_cell.rect().y())
+                        e_x = int(end_cell.rect().x())
+                        e_y = int(end_cell.rect().y())
+                        
+                        # Sprawdź, czy to jest linia, którą mamy usunąć
+                        if s_x == start_x and s_y == start_y and e_x == end_x and e_y == end_y:
+                            # Usuń linię ze sceny
+                            scene.removeItem(item)
+                            
+                            # Zaktualizuj biały krąg w komórce startowej (odbija czarny z powrotem na biały)
+                            for circle in start_cell.inner_circles:
+                                if circle.brush().color() == Qt.black:
+                                    circle.setBrush(QBrush(Qt.white))
+                                    break
+                            
+                            self.logger.log(f"Usunięto odbieraną linię: {start_x},{start_y} -> {end_x},{end_y}")
+                            return  # Znaleźliśmy i usunęliśmy linię, więc kończymy
+
+
+    def update_turn_timer(self):
+        self.turn_remaining -= 1
+        if self.turn_remaining <= 0:
+            self.switch_turn()
+        self.turn_timer_display.setPlainText(f"Timer: {self.turn_remaining}s")
+
+    def handle_network_log(self, message):
+        """Handle log messages from network threads"""
+        if hasattr(self, 'logger'):
+            self.logger.log(message)
 
     def display_message(self, message):
         self.message_label.setPlainText(message)
@@ -1627,6 +2056,43 @@ class GameView(QGraphicsView):
     def request_suggestion(self):
         if isinstance(self.scene(), GameScene):
             self.scene().suggest_best_move()
+
+
+    def handle_create_line(self, start_x, start_y, end_x, end_y, color):
+        """Obsługa tworzenia linii z powiadomień sieciowych"""
+        # Sprawdź, czy scena jest instancją GameScene
+        scene = self.scene()
+        if isinstance(scene, GameScene):
+            # Znajdź komórki początkową i końcową
+            start_cell = None
+            end_cell = None
+            
+            for cell in scene.cells:
+                cell_x = int(cell.rect().x())
+                cell_y = int(cell.rect().y())
+                
+                if cell_x == start_x and cell_y == start_y:
+                    start_cell = cell
+                
+                if cell_x == end_x and cell_y == end_y:
+                    end_cell = cell
+                
+                if start_cell and end_cell:
+                    break
+            
+            if start_cell and end_cell:
+                # Utwórz linię między komórkami
+                start_pos = start_cell.scenePos() + start_cell.rect().center()
+                end_pos = end_cell.scenePos() + end_cell.rect().center()
+                
+                # Utwórz linię
+                line = ClickableLine(QLineF(start_pos, end_pos), start_cell, end_cell)
+                line.setPen(QPen(QColor(color), 8))
+                
+                # Dodaj linię do sceny
+                scene.addItem(line)
+                
+                self.logger.log(f"Utworzono odbieraną linię: {start_x},{start_y} -> {end_x},{end_y}")
 
     def keyPressEvent(self, event):
         if ClickableCell.moving_cell:
