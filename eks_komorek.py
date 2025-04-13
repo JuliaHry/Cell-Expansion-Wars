@@ -1602,23 +1602,33 @@ class GameScene(QGraphicsScene):
         menu_button.mousePressEvent = self.back_to_main_menu
 
     def create_restart_button(self):
-        restart_button = HoverableRectItem(400, 70, 100, 30)
-        restart_button.setBrush(QBrush(QColor(10, 10, 50)))
-        restart_button.setPen(QPen(Qt.white, 2))
-        self.addItem(restart_button)
+        # Only create restart button if not in network game mode
+        if self.game_mode != "Gra sieciowa":
+            restart_button = HoverableRectItem(400, 70, 100, 30)
+            restart_button.setBrush(QBrush(QColor(10, 10, 50)))
+            restart_button.setPen(QPen(Qt.white, 2))
+            self.addItem(restart_button)
 
-        restart_text = QGraphicsTextItem("RESTART", restart_button)
-        restart_text.setFont(QFont("Arial", 10))
-        restart_text.setDefaultTextColor(Qt.white)
-        restart_text_rect = restart_text.boundingRect()
-        restart_text.setPos(
-            restart_button.rect().center().x() - restart_text_rect.width() / 2,
-            restart_button.rect().center().y() - restart_text_rect.height() / 2
-        )
+            restart_text = QGraphicsTextItem("RESTART", restart_button)
+            restart_text.setFont(QFont("Arial", 10))
+            restart_text.setDefaultTextColor(Qt.white)
+            restart_text_rect = restart_text.boundingRect()
+            restart_text.setPos(
+                restart_button.rect().center().x() - restart_text_rect.width() / 2,
+                restart_button.rect().center().y() - restart_text_rect.height() / 2
+            )
 
-        restart_button.mousePressEvent = self.restart_game
+            restart_button.mousePressEvent = self.restart_game
+            
+            # Store reference to the restart button
+            self.restart_button = restart_button
+            self.restart_text = restart_text
 
     def restart_game(self, event):
+        # Exit if we're in network mode
+        if self.game_mode == "Gra sieciowa":
+            return
+            
         view = self.views()[0]
         view.suggestion_label.hide()  
         self.clear()  
