@@ -1031,7 +1031,7 @@ class GameScene(QGraphicsScene):
 
 
     def create_save_button(self):
-        save_button = HoverableRectItem(700, 70, 160, 30)
+        save_button = HoverableRectItem(710, 805, 160, 30)
         save_button.setBrush(QBrush(QColor(10, 10, 50)))
         save_button.setPen(QPen(Qt.white, 2))
         self.addItem(save_button)
