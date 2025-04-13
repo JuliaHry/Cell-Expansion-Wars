@@ -1836,21 +1836,9 @@ class MainMenuScene(QGraphicsScene):
         title.setPos(450 - title_rect.width() / 2, 200)
         self.addItem(title)
 
-        play_button = HoverableRectItem(250, 300, 400, 100)
-        play_button.setBrush(QBrush(QColor(10, 10, 50)))
-        play_button.setPen(QPen(Qt.white, 2))
-        self.addItem(play_button)
+        # Removed the play button
 
-        play_text = QGraphicsTextItem("GRAJ", play_button)
-        play_text.setFont(QFont("Arial", 20, QFont.Bold))
-        play_text.setDefaultTextColor(Qt.white)
-        play_text_rect = play_text.boundingRect()
-        play_text.setPos(
-            play_button.rect().center().x() - play_text_rect.width() / 2,
-            play_button.rect().center().y() - play_text_rect.height() / 2
-        )
-
-        level_button = HoverableRectItem(250, 450, 400, 100)
+        level_button = HoverableRectItem(250, 350, 400, 100)  # Adjusted position
         level_button.setBrush(QBrush(QColor(10, 10, 50)))
         level_button.setPen(QPen(Qt.white, 2))
         self.addItem(level_button)
@@ -1864,7 +1852,7 @@ class MainMenuScene(QGraphicsScene):
             level_button.rect().center().y() - level_text_rect.height() / 2
         )
 
-        exit_button = HoverableRectItem(250, 600, 400, 100) 
+        exit_button = HoverableRectItem(250, 500, 400, 100)  # Adjusted position
         exit_button.setBrush(QBrush(QColor(10, 10, 50)))
         exit_button.setPen(QPen(Qt.white, 2))
         self.addItem(exit_button)
@@ -1878,7 +1866,6 @@ class MainMenuScene(QGraphicsScene):
             exit_button.rect().center().y() - exit_text_rect.height() / 2
         )
 
-        play_button.mousePressEvent = self.start_game
         level_button.mousePressEvent = self.show_level_selection
         exit_button.mousePressEvent = self.exit_game
 
