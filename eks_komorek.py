@@ -786,6 +786,24 @@ class GameScene(QGraphicsScene):
         self.client = None
 
 
+# Add to GameScene class:
+    def cleanup_network_resources(self):
+        """Clean up network resources properly before exiting or changing scenes"""
+        if hasattr(self, 'server') and self.server is not None:
+            self.server.stop()  # This will close the server socket
+            self.server = None
+            game_view_instance.logger.log("Server socket closed and resources released")
+            
+        if hasattr(self, 'client') and self.client is not None:
+            if self.client.client_socket:
+                try:
+                    self.client.client_socket.close()
+                except:
+                    pass
+            self.client.connected = False
+            self.client = None
+            game_view_instance.logger.log("Client socket closed and resources released")
+
     def setup_network_role(self):
         """Sets up the network role (server or client) based on configuration"""
         # Check if we need to create a server
@@ -1048,6 +1066,10 @@ class GameScene(QGraphicsScene):
 
     def save_and_exit_game(self, event):
         save_current_game_to_xml(self)
+        
+        # Clean up network resources before exiting
+        self.cleanup_network_resources()
+        
         QApplication.instance().quit()
 
     def create_level_5_cells(self):
@@ -1652,11 +1674,15 @@ class GameScene(QGraphicsScene):
 
     def back_to_main_menu(self, event):
         view = self.views()[0]
-        view.suggestion_label.hide()  
+        view.suggestion_label.hide()
+        
+        # Clean up network resources before changing scenes
+        self.cleanup_network_resources()
+        
         view.setScene(MainMenuScene())
-
+        
         ClickableCell.moving_cell = None
-
+        
         if hasattr(self, 'winner_label'):
             self.removeItem(self.winner_label)
             del self.winner_label

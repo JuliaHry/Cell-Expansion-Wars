@@ -232,6 +232,16 @@ class NetworkClient:
         """Set reference to the game scene for accessing cell values"""
         self.scene = scene
 
+    # Add to NetworkClient class:
+    def disconnect(self):
+        """Properly disconnect the client socket"""
+        self.connected = False
+        try:
+            if self.client_socket:
+                self.client_socket.close()
+        except Exception as e:
+            print(f"Error closing client socket: {e}")
+
     def connect(self):
         try:
             self.client_socket.connect((self.ip, self.port))
