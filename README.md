@@ -1,112 +1,150 @@
-# Cell Expansion Wars
+  # Cell Expansion Wars
 
-### Opis projektu
+  Turn-based strategy game built with PyQt5 in which two factions (green and pink) fight to capture all cells on the board. The game uses QGraphicsScene/QGraphicsItem, has a unit level system, turn timer, move suggestions and a network mode with synchronized game state.
 
-Projekt to turowa gra strategiczna zaimplementowana w PyQt5, w której dwie strony (zielona i różowa) rywalizują o przejęcie nwszystkich komórek na planszy. Gra posiada system walki, poziomy jednostek, efekty wizualne oraz mechanizm tur i AI podpowiadające najlepszy ruch. Interfejs oparty jest na QGraphicsScene i QGraphicsItem.
+  ---
 
-### Wymagania spełnione w projekcie (projekt wykonany łącznie na 17 pkt)
+  ## Key Features
 
-- QGraphicsScene – implementacja sceny gry (1 pkt)
+  - Two-player, turn-based strategy (green vs pink).
+  - 5 board layouts with different cell placements, including neutral gray cells.
+  - Unit levels (LVL 1–3) that affect the attack strength of each cell.
+  - Bridges (lines) between cells with a limit of 2 bridges per cell.
+  - Highlighting of valid attack targets and the cost of creating a bridge.
+  - Combat system with mini-cells moving along bridges and explosion effects when capturing a cell.
+  - Turn timer (10 s) and alternating turns with current player and time displayed.
+  - “HINT” button with simple AI suggesting a potentially good move (attacking + target cell).
+  - Logger printing messages to the console and a QTextEdit widget (rotating log with a 100-line limit).
+  - Saving the current game state and resuming later.
+  - Full game history recording and replay in separate windows from three sources:
+    - XML file (`history.xml`),
+    - JSON file (`history.json`),
+    - MongoDB collection (`game_db.full_game_history`).
+  - Network mode (server/client) with synchronized turns, cell values, levels and bridges.
 
-  - Klasa GameScene dziedziczy po QGraphicsScene i obsługuje całą logikę gry, w tym rysowanie, aktualizacje i zdarzenia myszy.
+  ---
 
-- Dziedziczenie po QGraphicsItem – jednostki jako osobne obiekty (1 pkt)
+  ## Game Modes
 
-  - ClickableCell oraz ClickableLine dziedziczą odpowiednio po QGraphicsEllipseItem i QGraphicsLineItem, tworząc niezależne interaktywne jednostki.
+  - **Single player** – standard game with move suggestions available.
+  - **Local 2-player** – two people play on the same machine, taking turns.
+  - **Network game** – one instance runs as a server (green), the other as a client (pink):
+    - the server owns the authoritative game state and sends updates to clients,
+    - synchronized are: cell values, levels, bridges, current turn and remaining time,
+    - each player can act only during their own turn (validated on both server and client).
 
-- Interaktywność jednostek – klikalność, przeciąganie, menu kontekstowe (3 pkt)
+  ---
 
-  - Klikalne komórki i linie.
+  ## Requirements
 
-  - Menu kontekstowe dla komórek (przesuwanie, zmiana rozmiaru). Wyświetlane po kliknięciu prawym przyciskiem myszy na komórkę. Po kliknięciu prawym przyciskiem myszy na tło wyświetla się menu dla tła (możliwość jego zmiany)
+  - Python 3.x (recommended 3.8+).
+  - Libraries:
+    - `PyQt5` – GUI,
+    - `pymongo` – **optional**, for saving/replaying history in MongoDB.
+  - For network mode: TCP connectivity (default port 5000).
+  - For MongoDB replays: running MongoDB server (e.g. `mongodb://localhost:27017/`).
 
-  - Możliwość przesuwania komórek za pomocą klawiatury (tryb przesuwania) - aby go odpalić należy wybrać opcję "Przesuń komórkę" z menu kontekstowego komórek. Wprowadza to komórki w tryb przesuwania. Obługa przesuwania odywa się za pomocą klawiatury.
-  - Aby przesuwać inną komórkę, należy - wciąż będąc w trybie przesuwania - kliknąć lewym przyciskiem myszy na inną komórkę (komórka aktualnie przesuwana zaznaczona jest pomarańczową obwódką). Aby opuścić tryb przesuwania należy kliknąć przycisk "ZAKOŃCZ"
- 
-  
+  Example installation:
 
-- Sterowanie jednostkami – wybór z menu i ruch na siatce planszy (2 pkt)
+  ```bash
+  pip install PyQt5 pymongo
+  ```
 
-  - Wybór jednostki oraz atak na przeciwnika.
+  If you do not use MongoDB, `pymongo` is not required to play the core game.
 
-  - Obsługa logicznych ruchów poprzez kliknięcia i przyciski.
- 
-  - Tryb przesuwania komórek.
- 
-    
-- Zaciąganie grafik jednostek z pliku .rc (1 pkt)
+  ---
 
-  - Obrazy zielonych oraz różowych komórek wczytywane są z pliku resources.py w formacie .rc.
+  ## Running the Game
 
-- Podświetlanie możliwych ruchów i ataków w zależności od mnożnika (2 pkt)
+  ### Main game
 
-  - Komórki podświetlane na żółto, jeśli mogą zostać zaatakowane w momencie kliknięcia na komórkę, którą chcemy zaatakować (atakującą)
+  From the project directory:
 
-  - Zależność możliwości ataku od poziomu i wartości komórek.
+  ```bash
+  python eks_komorek.py
+  ```
 
-- System walki uwzględniający poziomy, mnożenie jednostek i specjalne efekty bitewne (3 pkt)
+  On startup you choose the level and game mode (single player / local / network). In network mode one instance acts as the server, the other as the client – you provide IP and port in the dialogs.
 
-  - Wartość ataku zależy od poziomu jednostki.
+  ### Replaying recorded games
 
-  - Po każdej walce (doprowadzeniu wrogiej mini komórki do komórki przeciwnika) następuje eksplozja graficzna.
+  During a game you have buttons in the top area of the window:
 
-  - System poziomów (LVL 1–3), który zwiększa siłę ataku.
+  - **SAVE HISTORY [XML]** – save history to `history.xml`.
+  - **SAVE HISTORY [JSON]** – save history to `history.json`.
+  - **SAVE HISTORY [MONGO]** – save history to MongoDB collection `game_db.full_game_history`.
+  - **REPLAY [XML] / [JSON] / [MONGO]** – open the corresponding replay window.
 
- - Mechanizm tur i licznik czasu na wykonanie ruchu (zegar rundowy) (2 pkt)
+  You can also run them manually from the terminal:
 
-  - Naprzemienne tury graczy (zielony/różowy).
+  ```bash
+  python replay_view.py         # replay from history.xml
+  python replay_view_json.py    # replay from history.json
+  python replay_view_mongo.py   # replay from MongoDB
+  ```
 
-  - Odliczanie czasu każdej tury (10 sekund).
+  Replay windows offer **Start** and **REPLAY** buttons and a speed slider.
 
-- System podpowiedzi strategicznych oparty na AI (np. najlepszy ruch w turze) (1 pkt)
+  ### Saving and exiting
 
-  - Przycisk „PODPOWIEDŹ” sugeruje optymalny ruch w bieżącej turze.
+  The **“ZAKOŃCZ I ZAPISZ”** button (“FINISH AND SAVE”, at the bottom of the main window) saves the current match to a file and closes the app. On the next launch you can resume from the saved state.
 
-  - Informacje o sugerowanych jednostkach (atakujący, cel).
+  ---
 
-- Logger wyświetlający komunikaty na konsoli i w interfejsie QTextEdit z rotującym logowaniem (1 pkt)
+  ## Rules and Controls
 
-  - Klasa Logger zapisuje logi do konsoli i do widgetu QTextEdit z limitem 100 linii.
+  ### Objective
 
-- Możliwość zapisania stanu gry i kontynuacji po kolejnym otworzeniu
+  Capture all cells on the board. The game is turn-based: green and pink take turns, and each turn lasts 10 seconds.
 
-- Możliwość zapisania i obejrzenia przebiegu rozgrywki zapisanych z trzech typach plików: xml, json, mongodb
+  ### Creating bridges (attacks)
 
+  1. Left-click your own cell (the attacker).
+  2. Move the mouse – a line will follow from the center of the cell.
+  3. Left-click the cell you want to attack or reinforce.
 
+  This creates a bridge along which mini-cells travel from the attacking cell to the target. The cost of creating a bridge depends on its length and is subtracted from the attacking cell’s value. Attack strength depends on the cell level (LVL 1–3).
 
+  ### Combat rules
 
-### Jak uruchomić projekt
+  - **Bridge between cells of the same color**  
+    The value of the source cell decreases, while the value of the target cell increases.
 
-- Wymagania
+  - **Bridge to an enemy cell**  
+    Both cells lose value. When the enemy cell’s value reaches 0, it is captured and changes to the attacker’s color with a starting value.
 
-  - Python 3.x
+  - **Bridge to a gray (neutral) cell**  
+    A gray cell has a top number (fill progress) and a bottom target value (e.g. 8).  
+    The top number:
+    - increases when the cell is being filled with a given color,
+    - decreases when the opposite color starts filling it.  
+    When the top number reaches the bottom value, the gray cell converts to the team that completed the fill.
 
-  - PyQt5
+  - **Bridge limit**  
+    Each cell can have at most **2 bridges**. The two small circles on a cell indicate available bridge slots – when both are black, no more bridges can be created from that cell.
 
-- Uruchomienie gry
+  ### Removing bridges
 
-  - python main.py
+  - Left-click a bridge:
+    - clicking closer to the attacking cell sends more mini-cells back to it,
+    - clicking closer to the target cell lets more mini-cells reach it before the bridge is removed.
 
-    
+  ### Moving cells (edit mode)
 
-### Podstawowe zasady gry:
+  - Right-click a cell and choose **“Przesuń komórkę”** (“Move cell”).
+  - The cell gets an orange outline and enters move mode.
+  - Use the **arrow keys** to move the selected cell.
+  - To move a different cell while in move mode, left-click it.
+  - To leave move mode, use the corresponding UI option/button.
 
-Celem gry jest przejęcie przez gracza wszystkich komórek na planszy. Gra działa turowo każdy gracz kolejno dostaje 10 sekund na wykonywanie ruchów. 
+  ---
 
-Gracz atakuje inne komórki poprzez utworzenie mostu łączącego go z inną komórką. W tym celu należy kliknąć lewym przyciskiem myszy na komórkę atakującą (zacznie się wówczas za myszką tworzyć linia od środka tej komórki), a następnie 
-lewym przyciskiem myszy kliknąć na komórkę, którą chcemy zaatakować. Wówczas utworzy się most, którym mini komórki będą opuszczać komórkę atakującą i wchodzić do komórki atakowanej. Moc ataku zależy od poziomu komórki. 
+  ## Repository Structure
 
-**Zasady ataku:**
-
-  - Gdy most łączy komórki tego samego koloru - wartość na komórce początkowej maleje, a końcowej wzrasta
-    
-  - Gdy most łączy komórkę z komórką wroga - wartości na obu komórkach maleją. Gdy wartość komórki wroga osiągnie 0, zostaje ona przejęta przez komórkę przeciwnika.
-
-  - Gdy most łączy komórkę z szarą komórką - górna liczba na szarej komórce zwiększa się, gdy wypełnia ją dany kolor i zmniejsza, gdy częściowo wypełniona już jest danym kolorem i zaczyna wypełniać ją inny kolor.Gdy górna liczba osiągnie wartość dolnej liczby - komórka zamienia się w komórkę należącą do drużyny, która wypełniła ją swoim kolorem.
-
-  - Każda komórka może stworzyć 2 mosty. Gdy oba kółka na komórce będą czarne, nie będzie ona mogła utworzyć kolejnego mostu.
-
-**Usuwanie mostów:**
-
-  - Aby usunąć most należy na niego kliknąć lewym przyciskiem myszy. Gdy klikniemy bliżej komórki atakującej, więcej komórek do niej powróci. Gdy bliżej komórki atakowanej - więcej komórek ją zaatakuje. 
+  - `eks_komorek.py` – main game logic, scene (`GameScene`), cells (`ClickableCell`), lines (`ClickableLine`), turn timer, history recording.
+  - `network.py` – TCP client and server implementation (networked game synchronization).
+  - `replay_view.py` – replay from XML history.
+  - `replay_view_json.py` – replay from JSON history.
+  - `replay_view_mongo.py` – replay from MongoDB history.
+  - `resources.py`, `resources.qrc`, `images/` – graphical assets (e.g. cell textures for each team).
 
